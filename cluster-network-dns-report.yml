@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-dns-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide DNS report including:
+#     - Resolver configuration
+#     - DNS latency
+#     - DNS failures
+#     - k3s-related DNS lookups
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-dns-report.yml
+#
+# Notes:
+#   - Useful for diagnosing k3s startup failures and distcc host resolution.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show resolv.conf
+      shell: cat /etc/resolv.conf
+      register: resolv
+
+    - name: Test DNS latency
+      shell: dig +stats google.com 2>/dev/null | grep "Query time" || true
+      register: latency
+
+    - name: Test cluster DNS (k3s)
+      shell: dig +short kubernetes.default.svc.cluster.local 2>/dev/null || true
+      register: kdns
+
+    - name: Display DNS report
+      debug:
+        msg:
+          - "resolv.conf: {{ resolv.stdout }}"
+          - "DNS Latency: {{ latency.stdout }}"
+          - "k3s DNS: {{ kdns.stdout }}"

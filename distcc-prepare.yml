@@ -1,0 +1,46 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-prepare.yml
+# =============================================================================
+# Purpose:
+#   Install and configure distcc on all k3s cluster nodes so they can accept
+#   distributed compile jobs from the builder host.
+#
+# Usage:
+#   ansible-playbook -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-prepare.yml
+#
+# Notes:
+#   - Assumes Arch-based nodes with 'distcc' package and systemd service.
+#   - Allows connections from 192.168.29.0/24; adjust if network changes.
+#   - Safe to re-run; idempotent.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Install distcc
+      package:
+        name: distcc
+        state: present
+
+    - name: Enable and start distccd service
+      systemd:
+        name: distccd
+        enabled: yes
+        state: started
+
+    - name: Configure distccd options (allow cluster subnet)
+      lineinfile:
+        path: /etc/conf.d/distccd
+        regexp: '^DISTCCD_OPTS='
+        line: 'DISTCCD_OPTS="--daemon --allow 192.168.29.0/24 --log-file /var/log/distccd.log"'
+        create: yes
+      notify: restart distccd
+
+  handlers:
+    - name: restart distccd
+      systemd:
+        name: distccd
+        state: restarted

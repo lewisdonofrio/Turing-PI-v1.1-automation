@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-scheduler-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel scheduler report including:
+#     - Scheduler statistics
+#     - Run queue lengths
+#     - CFS (Completely Fair Scheduler) metrics
+#     - Scheduling latency warnings
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-scheduler-report.yml
+#
+# Notes:
+#   - Useful for diagnosing CPU contention, latency spikes, and distcc slowdown.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show scheduler statistics
+      shell: cat /proc/schedstat 2>/dev/null | head -n 50
+      register: schedstat
+
+    - name: Show run queue lengths
+      shell: cat /proc/loadavg
+      register: loadavg
+
+    - name: Check for scheduler warnings
+      shell: dmesg | grep -i sched || true
+      register: sched_warn
+
+    - name: Display scheduler report
+      debug:
+        msg:
+          - "Schedstat: {{ schedstat.stdout }}"
+          - "Loadavg: {{ loadavg.stdout }}"
+          - "Scheduler Warnings: {{ sched_warn.stdout }}"

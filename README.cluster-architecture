@@ -1,0 +1,38 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-architecture
+# =============================================================================
+# Purpose:
+#   Document the high-level architecture of the k3s cluster, including:
+#     - Node roles
+#     - Network layout
+#     - Build pipeline
+#     - Automation boundaries
+#
+# Node Roles:
+#   kubenode1:
+#     - Builder node
+#     - distcc client
+#     - Kernel compilation host
+#
+#   kubenode2–kubenode7:
+#     - distccd servers
+#     - k3s worker nodes
+#
+# Network Layout:
+#   - All nodes use FQDNs under .home.lab
+#   - Subnet: 192.168.29.0/24
+#   - DNS resolution handled by home router
+#
+# Build Pipeline:
+#   1. Builder compiles kernel using distcc.
+#   2. Ansible deploys kernel artifacts.
+#   3. Nodes reboot sequentially.
+#
+# Automation Boundaries:
+#   - 'builder' compiles kernels.
+#   - 'ansible' deploys kernels.
+#   - distccd runs on worker nodes.
+#
+# Notes:
+#   - This file provides the architectural overview for future maintainers.
+# =============================================================================

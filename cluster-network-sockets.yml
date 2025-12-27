@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-sockets.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide network socket report including:
+#     - Listening TCP/UDP sockets
+#     - Established connections
+#     - Distccd socket status
+#     - k3s-related ports
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-sockets.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc connectivity issues and k3s networking bugs.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show listening sockets
+      shell: ss -tulnp
+      register: listen
+
+    - name: Show established connections
+      shell: ss -tanp
+      register: established
+
+    - name: Check distccd socket
+      shell: ss -tulnp | grep 3632 || true
+      register: distcc
+
+    - name: Display network socket report
+      debug:
+        msg:
+          - "Listening: {{ listen.stdout }}"
+          - "Established: {{ established.stdout }}"
+          - "distccd: {{ distcc.stdout }}"

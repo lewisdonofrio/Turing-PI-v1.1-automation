@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-latency-report.yml
+# =============================================================================
+# Purpose:
+#   Measure network latency across all cluster nodes. This report includes:
+#     - Ping latency to each node
+#     - Packet loss
+#     - Min/avg/max RTT
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-latency-report.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc slowness or network congestion.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Ping each node from itself
+      shell: ping -c 4 {{ inventory_hostname }}
+      register: ping_self
+
+    - name: Ping gateway
+      shell: ping -c 4 192.168.29.1
+      register: ping_gw
+
+    - name: Display latency report
+      debug:
+        msg:
+          - "Self-ping: {{ ping_self.stdout }}"
+          - "Gateway: {{ ping_gw.stdout }}"

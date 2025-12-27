@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-storage-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide storage report including:
+#     - Disk usage
+#     - Mounted filesystems
+#     - Available space
+#     - Inode usage
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-storage-report.yml
+#
+# Notes:
+#   - Useful for diagnosing low-space issues or planning upgrades.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Disk usage summary
+      shell: df -h
+      register: disk_out
+
+    - name: Inode usage summary
+      shell: df -i
+      register: inode_out
+
+    - name: Mounted filesystems
+      shell: mount | grep "^/"
+      register: mount_out
+
+    - name: Display storage report
+      debug:
+        msg:
+          - "Disk Usage: {{ disk_out.stdout }}"
+          - "Inodes: {{ inode_out.stdout }}"
+          - "Mounts: {{ mount_out.stdout }}"

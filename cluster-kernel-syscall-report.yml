@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-syscall-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide syscall report including:
+#     - Syscall availability
+#     - Syscall usage statistics (if enabled)
+#     - Seccomp restrictions (if present)
+#     - Syscall-related warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-syscall-report.yml
+#
+# Notes:
+#   - Useful for diagnosing container runtime issues and kernel ABI mismatches.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: List available syscalls
+      shell: cat /usr/include/asm-generic/unistd.h 2>/dev/null | head -n 50
+      register: syscalls
+
+    - name: Check for seccomp restrictions
+      shell: grep Seccomp /proc/self/status 2>/dev/null || true
+      register: seccomp
+
+    - name: Check for syscall warnings
+      shell: dmesg | grep -i syscall || true
+      register: warn
+
+    - name: Display syscall report
+      debug:
+        msg:
+          - "Syscalls: {{ syscalls.stdout }}"
+          - "Seccomp: {{ seccomp.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

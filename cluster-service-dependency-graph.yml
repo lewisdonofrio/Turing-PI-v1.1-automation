@@ -1,0 +1,37 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-service-dependency-graph.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide service dependency graph including:
+#     - Systemd unit dependencies
+#     - Critical path services
+#     - k3s service dependencies
+#     - Boot ordering anomalies
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-service-dependency-graph.yml
+#
+# Notes:
+#   - Useful for diagnosing slow boots and service ordering issues.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show systemd critical chain
+      shell: systemd-analyze critical-chain 2>/dev/null
+      register: chain
+
+    - name: Show k3s service dependencies
+      shell: systemctl list-dependencies k3s 2>/dev/null
+      register: deps
+
+    - name: Display dependency graph
+      debug:
+        msg:
+          - "Critical Chain: {{ chain.stdout }}"
+          - "k3s Dependencies: {{ deps.stdout }}"

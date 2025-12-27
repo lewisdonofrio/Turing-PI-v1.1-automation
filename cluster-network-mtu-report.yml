@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-mtu-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide MTU report including:
+#     - Interface MTU values
+#     - MTU mismatches
+#     - Jumbo frame support
+#     - MTU-related errors
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-network-mtu-report.yml
+#
+# Notes:
+#   - Useful for diagnosing packet fragmentation and distcc performance issues.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show MTU for all interfaces
+      shell: ip link | grep mtu
+      register: mtu
+
+    - name: Detect MTU mismatches
+      shell: ip link | awk '/mtu/ {print $5}' | sort -u
+      register: uniq
+
+    - name: Check for MTU errors
+      shell: dmesg | grep -i mtu || true
+      register: warn
+
+    - name: Display MTU report
+      debug:
+        msg:
+          - "MTU Values: {{ mtu.stdout }}"
+          - "Unique MTUs: {{ uniq.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

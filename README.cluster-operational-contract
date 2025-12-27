@@ -1,0 +1,32 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-contract
+# =============================================================================
+# Purpose:
+#   Define the operational contract between the builder, ansible automation, and
+#   cluster nodes. This ensures predictable, safe, and reproducible operations.
+#
+# Contract Terms:
+#
+#   1. Builder Responsibilities
+#      - Produce verified kernel artifacts
+#      - Maintain build metadata
+#      - Follow prechecks and postchecks
+#
+#   2. Ansible Responsibilities
+#      - Deploy kernels safely
+      - Run diagnostics
+      - Maintain cluster health
+#
+#   3. Node Responsibilities
+#      - Run distccd
+#      - Execute workloads
+#      - Report health
+#
+#   4. Shared Responsibilities
+#      - Maintain integrity
+#      - Follow rollback-first philosophy
+#      - Keep documentation ASCII-safe and reproducible
+#
+# Notes:
+#   - This file defines the authoritative operational contract.
+# =============================================================================

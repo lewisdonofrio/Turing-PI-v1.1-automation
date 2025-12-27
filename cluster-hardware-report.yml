@@ -1,0 +1,47 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-hardware-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide hardware report including:
+#     - CPU info
+#     - Memory size
+#     - Board model
+#     - Serial number
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-hardware-report.yml
+#
+# Notes:
+#   - Useful for hardware inventory, audits, and replacement planning.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get CPU info
+      shell: cat /proc/cpuinfo
+      register: cpuinfo
+
+    - name: Get memory size
+      shell: grep MemTotal /proc/meminfo
+      register: meminfo
+
+    - name: Get board model
+      shell: cat /proc/device-tree/model 2>/dev/null || true
+      register: model
+
+    - name: Get serial number
+      shell: cat /proc/cpuinfo | grep Serial | awk '{print $3}' || true
+      register: serial
+
+    - name: Display hardware report
+      debug:
+        msg:
+          - "CPU Info: {{ cpuinfo.stdout }}"
+          - "MemTotal: {{ meminfo.stdout }}"
+          - "Model: {{ model.stdout }}"
+          - "Serial: {{ serial.stdout }}"

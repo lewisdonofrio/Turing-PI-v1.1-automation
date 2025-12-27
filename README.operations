@@ -1,0 +1,39 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.operations
+# =============================================================================
+# Purpose:
+#   Provide an operational guide for day-to-day cluster management using the
+#   Ansible automation repository. This file defines the standard workflows
+#   for maintaining the k3s cluster.
+#
+# Core Operations:
+#
+#   1. Prepare distcc on all nodes
+#        ansible-playbook distcc-prepare.yml
+#
+#   2. Verify distcc functionality
+#        ansible-playbook distcc-verify.yml
+#        ansible-playbook distcc-status.yml
+#
+#   3. Deploy a new kernel
+#        ansible-playbook kernel-backup.yml
+#        ansible-playbook deploy-kernel.yml
+#        ansible-playbook kernel-verify.yml
+#
+#   4. Roll back a kernel
+#        ansible-playbook kernel-rollback.yml
+#
+#   5. Reboot the cluster safely
+#        ansible-playbook reboot-cluster.yml
+#
+#   6. Monitor cluster health
+#        ansible-playbook cluster-health.yml
+#
+#   7. Benchmark distcc performance
+#        ansible-playbook distcc-benchmark.yml
+#
+# Notes:
+#   - All operations must be run as the 'ansible' user.
+#   - All paths are absolute for reproducibility.
+#   - This file serves as the operational quick reference.
+# =============================================================================

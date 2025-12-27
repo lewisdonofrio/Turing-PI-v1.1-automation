@@ -1,0 +1,29 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.verification-pipeline
+# =============================================================================
+# Purpose:
+#   Document the verification pipeline used after deploying a new kernel or
+#   modifying cluster configuration. This ensures cluster consistency and
+#   operational readiness.
+#
+# Verification Steps:
+#
+#   1. Kernel Verification
+#        ansible-playbook kernel-verify.yml
+#
+#   2. Node Health Check
+#        ansible-playbook cluster-health.yml
+#
+#   3. Service Status Check
+#        ansible-playbook cluster-service-report.yml
+#
+#   4. Kernel Report
+#        ansible-playbook cluster-kernel-report.yml
+#
+#   5. dmesg Review
+#        ansible-playbook cluster-dmesg-report.yml
+#
+# Notes:
+#   - This pipeline should be run after every kernel deployment.
+#   - Ensures nodes are healthy, consistent, and ready for workloads.
+# =============================================================================

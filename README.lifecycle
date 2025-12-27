@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.lifecycle
+# =============================================================================
+# Purpose:
+#   Document the lifecycle of kernel builds, deployments, and cluster
+#   maintenance. This file defines the long-term operational flow for the
+#   k3s cluster.
+#
+# Lifecycle Stages:
+#
+#   1. Build Stage (builder user)
+#        - Prepare kernel tree
+#        - Run distributed build
+#        - Validate artifacts
+#
+#   2. Backup Stage (ansible user)
+#        - Run kernel-backup.yml
+#
+#   3. Deployment Stage
+#        - Run deploy-kernel.yml
+#
+#   4. Verification Stage
+#        - Run verification pipeline
+#
+#   5. Monitoring Stage
+#        - Run cluster-health.yml
+#        - Run cluster-service-report.yml
+#
+#   6. Rollback Stage (if needed)
+#        - Run kernel-rollback.yml
+#
+# Notes:
+#   - This file defines the authoritative lifecycle for cluster operations.
+#   - Ensures consistency, safety, and reproducibility.
+# =============================================================================

@@ -1,0 +1,38 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.distcc
+# =============================================================================
+# Purpose:
+#   Document the distributed compilation architecture using distcc across the
+#   k3s cluster.
+#
+# Architecture:
+#   - 'builder' is the distcc client.
+#   - kubenode2–kubenode7 are distcc servers.
+#   - distccd runs on each node and accepts jobs from kubenode1.
+#
+# Key Playbook:
+#   /opt/ansible-k3s-cluster/distcc-prepare.yml
+#       Installs distcc, configures distccd, and enables the service.
+#
+# Node-Side Paths:
+#   /etc/conf.d/distccd
+#       distccd configuration file.
+#
+#   /var/log/distccd.log
+#       distccd log output.
+#
+# Builder-Side Paths:
+#   /usr/lib/distcc/bin
+#       distcc compiler wrappers.
+#
+#   /home/builder/.bashrc
+#       Contains PATH and DISTCC_HOSTS exports.
+#
+# Verification:
+#   distcc -j32 gcc --version
+#   distccmon-text 5
+#
+# Notes:
+#   - distcc is NOT managed by ansible on the builder node.
+#   - distcc is managed by ansible on all cluster nodes.
+# =============================================================================

@@ -1,0 +1,64 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/deploy-kernel.yml
+# =============================================================================
+# Purpose:
+#   Deploy a newly built kernel from the builder node to all k3s cluster nodes.
+#   This playbook copies:
+#     - zImage
+#     - Device Tree Blobs (DTBs)
+#     - Kernel modules
+#   Then installs them into:
+#     - /boot
+#     - /lib/modules/<version>
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/deploy-kernel.yml
+#
+# Notes:
+#   - Assumes kernel artifacts are located on kubenode1 under:
+#       /home/builder/linux-rpi-k3s/
+#   - Assumes builder has already run:
+#       make modules_install INSTALL_MOD_PATH=/home/builder/linux-rpi-k3s/modules
+#   - Safe to re-run; overwrites kernel files on each node.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  vars:
+    kernel_src: "/home/builder/linux-rpi-k3s"
+    kernel_img: "{{ kernel_src }}/arch/arm/boot/zImage"
+    kernel_dtbs: "{{ kernel_src }}/arch/arm/boot/dts"
+    kernel_modules: "{{ kernel_src }}/modules"
+
+  tasks:
+    - name: Copy kernel image (zImage)
+      copy:
+        src: "{{ kernel_img }}"
+        dest: /boot/zImage
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Copy device tree blobs
+      copy:
+        src: "{{ kernel_dtbs }}/"
+        dest: /boot/dtbs/
+        owner: root
+        group: root
+        mode: '0644'
+      notify: rebuild_dtbs
+
+    - name: Sync kernel modules
+      synchronize:
+        src: "{{ kernel_modules }}/"
+        dest: "/lib/modules/"
+        delete: yes
+        recursive: yes
+
+  handlers:
+    - name: rebuild_dtbs
+      command: /usr/bin/true

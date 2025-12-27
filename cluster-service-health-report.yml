@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-service-health-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide service health report including:
+#     - Systemd service failures
+#     - Restart counts
+#     - k3s service health
+#     - Distccd service health
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-service-health-report.yml
+#
+# Notes:
+#   - Useful for diagnosing unstable nodes and service flapping.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show failed services
+      shell: systemctl --failed 2>/dev/null
+      register: failed
+
+    - name: Show k3s service status
+      shell: systemctl status k3s 2>/dev/null || true
+      register: k3s
+
+    - name: Show distccd service status
+      shell: systemctl status distccd 2>/dev/null || true
+      register: distcc
+
+    - name: Display service health report
+      debug:
+        msg:
+          - "Failed Services: {{ failed.stdout }}"
+          - "k3s: {{ k3s.stdout }}"
+          - "distccd: {{ distcc.stdout }}"

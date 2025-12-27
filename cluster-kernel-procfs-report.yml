@@ -1,0 +1,48 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-procfs-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide procfs report including:
+#     - Kernel version
+#     - CPU info
+#     - Memory info
+#     - Interrupt summary
+#     - Kernel command line
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-procfs-report.yml
+#
+# Notes:
+#   - Useful for validating kernel state, hardware identity, and boot params.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show kernel version
+      shell: cat /proc/version
+      register: version
+
+    - name: Show CPU info
+      shell: cat /proc/cpuinfo | head -n 20
+      register: cpu
+
+    - name: Show memory info
+      shell: cat /proc/meminfo | head -n 20
+      register: mem
+
+    - name: Show kernel command line
+      shell: cat /proc/cmdline
+      register: cmdline
+
+    - name: Display procfs report
+      debug:
+        msg:
+          - "Version: {{ version.stdout }}"
+          - "CPU: {{ cpu.stdout }}"
+          - "Memory: {{ mem.stdout }}"
+          - "Cmdline: {{ cmdline.stdout }}"

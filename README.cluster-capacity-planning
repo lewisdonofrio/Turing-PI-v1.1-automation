@@ -1,0 +1,28 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-capacity-planning
+# =============================================================================
+# Purpose:
+#   Document capacity planning guidelines for the cluster. This ensures the
+#   cluster remains performant under both k3s workloads and distributed builds.
+#
+# Capacity Planning Guidelines:
+#
+#   1. CPU
+#      - Ensure total cluster CPU > 4x builder CPU for optimal distcc scaling
+#
+#   2. Memory
+#      - Maintain at least 20% free memory on each node
+#
+#   3. Storage
+#      - SD cards degrade; replace every 12–18 months
+#
+#   4. Network
+#      - Ensure <1ms latency between nodes
+#      - Avoid Wi-Fi for distcc traffic
+#
+#   5. Thermal
+#      - Keep nodes below 70°C under load
+#
+# Notes:
+#   - Update this file as the cluster grows or workloads change.
+# =============================================================================

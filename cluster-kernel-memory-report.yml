@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-memory-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel memory report including:
+#     - Slab allocator usage
+#     - vmstat metrics
+#     - Kernel memory fragmentation
+#     - Page allocation failures (if any)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-memory-report.yml
+#
+# Notes:
+#   - Useful for diagnosing memory pressure, fragmentation, and OOM conditions.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show slab allocator usage
+      shell: cat /proc/slabinfo | head -n 50
+      register: slab
+
+    - name: Show vmstat
+      shell: vmstat -s
+      register: vm
+
+    - name: Check for page allocation failures
+      shell: dmesg | grep -i "page allocation failure" || true
+      register: alloc_fail
+
+    - name: Display kernel memory report
+      debug:
+        msg:
+          - "Slab: {{ slab.stdout }}"
+          - "VMStat: {{ vm.stdout }}"
+          - "Page Allocation Failures: {{ alloc_fail.stdout }}"

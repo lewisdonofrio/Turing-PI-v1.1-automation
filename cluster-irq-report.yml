@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-irq-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide IRQ (interrupt) report including:
+#     - IRQ counts per CPU
+#     - High interrupt sources
+#     - Softirq activity
+#     - IRQ balancing status
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-irq-report.yml
+#
+# Notes:
+#   - Useful for diagnosing network bottlenecks, USB issues, and CPU imbalance.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show IRQ table
+      shell: cat /proc/interrupts
+      register: irq
+
+    - name: Show softirq stats
+      shell: cat /proc/softirqs
+      register: softirq
+
+    - name: Check irqbalance service
+      shell: systemctl status irqbalance 2>/dev/null || true
+      register: irqbal
+
+    - name: Display IRQ report
+      debug:
+        msg:
+          - "Interrupts: {{ irq.stdout }}"
+          - "SoftIRQs: {{ softirq.stdout }}"
+          - "irqbalance: {{ irqbal.stdout }}"

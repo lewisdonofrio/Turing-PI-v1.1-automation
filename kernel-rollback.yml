@@ -1,0 +1,56 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/kernel-rollback.yml
+# =============================================================================
+# Purpose:
+#   Roll back each cluster node to the most recent kernel backup created by
+#   kernel-backup.yml. This restores:
+#     - /boot
+#     - /lib/modules/<version>
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/kernel-rollback.yml
+#
+# Notes:
+#   - Expects backups under /var/backups/kernel-<timestamp>.
+#   - Prompts for the backup directory to restore from.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  vars_prompt:
+    - name: rollback_dir
+      prompt: "Enter full path to kernel backup directory (e.g. /var/backups/kernel-20251227-0200)"
+      private: no
+
+  tasks:
+    - name: Validate rollback directory exists
+      stat:
+        path: "{{ rollback_dir }}"
+      register: rollback_stat
+
+    - name: Abort if rollback directory is missing
+      fail:
+        msg: "Rollback directory {{ rollback_dir }} does not exist."
+      when: not rollback_stat.stat.exists
+
+    - name: Restore /boot
+      synchronize:
+        src: "{{ rollback_dir }}/boot/"
+        dest: /boot/
+        recursive: yes
+        delete: yes
+
+    - name: Restore /lib/modules
+      synchronize:
+        src: "{{ rollback_dir }}/modules/"
+        dest: /lib/modules/
+        recursive: yes
+        delete: yes
+
+    - name: Display rollback confirmation
+      debug:
+        msg: "Kernel rollback completed using {{ rollback_dir }}"

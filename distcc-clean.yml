@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-clean.yml
+# =============================================================================
+# Purpose:
+#   Clean distcc logs, reset distccd state, and ensure a fresh environment for
+#   the next distributed kernel build.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-clean.yml
+#
+# Notes:
+#   - Clears /var/log/distccd.log.
+#   - Restarts distccd service.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Clear distccd log
+      copy:
+        content: ""
+        dest: /var/log/distccd.log
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Restart distccd service
+      systemd:
+        name: distccd
+        state: restarted
+
+    - name: Confirm distccd is running
+      shell: ps aux | grep distccd | grep -v grep
+      register: distccd_ps
+
+    - name: Display status
+      debug:
+        msg: "{{ distccd_ps.stdout }}"

@@ -1,0 +1,27 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-roles
+# =============================================================================
+# Purpose:
+#   Document the operational roles within the cluster automation framework.
+#   This ensures clear separation of duties and prevents privilege overlap.
+#
+# Roles:
+#
+#   Builder:
+#     - Owns kernel source tree
+#     - Runs distributed builds
+#     - Verifies artifacts
+#
+#   Ansible:
+#     - Deploys kernels
+#     - Manages distccd on nodes
+#     - Performs cluster-wide diagnostics
+#
+#   Worker Nodes:
+#     - Run distccd
+#     - Run k3s workloads
+#     - Receive kernel artifacts
+#
+# Notes:
+#   - This file defines the authoritative role model for the cluster.
+# =============================================================================

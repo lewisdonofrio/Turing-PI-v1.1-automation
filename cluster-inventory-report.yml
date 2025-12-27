@@ -1,0 +1,53 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-inventory-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide inventory report including:
+#     - Hostname
+#     - FQDN
+#     - IP address
+#     - OS version
+#     - Kernel version
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-inventory-report.yml
+#
+# Notes:
+#   - Useful for audits and cluster validation.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get hostname
+      command: hostname
+      register: host_out
+
+    - name: Get FQDN
+      command: hostname -f
+      register: fqdn_out
+
+    - name: Get IP address
+      command: hostname -I
+      register: ip_out
+
+    - name: Get OS release
+      command: cat /etc/os-release
+      register: os_out
+
+    - name: Get kernel version
+      command: uname -r
+      register: kernel_out
+
+    - name: Display inventory report
+      debug:
+        msg:
+          - "Hostname: {{ host_out.stdout }}"
+          - "FQDN: {{ fqdn_out.stdout }}"
+          - "IP: {{ ip_out.stdout }}"
+          - "OS: {{ os_out.stdout }}"
+          - "Kernel: {{ kernel_out.stdout }}"

@@ -1,0 +1,29 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-integrity-model
+# =============================================================================
+# Purpose:
+#   Define the integrity model for the cluster. This ensures that all files,
+#   artifacts, and configurations remain consistent, verifiable, and trusted.
+#
+# Integrity Components:
+#
+#   1. File Integrity
+#      - wc-based manifest
+#      - ASCII-safe documentation
+#
+#   2. Artifact Integrity
+#      - Verified kernel artifacts
+#      - Verified module dependencies
+#
+#   3. Configuration Integrity
+#      - Kernel config drift detection
+#      - Bootloader config drift detection
+#
+#   4. Operational Integrity
+#      - Preflight checks
+#      - Postchecks
+#      - Rollback strategy
+#
+# Notes:
+#   - This file defines the authoritative integrity model for the cluster.
+# =============================================================================

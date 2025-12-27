@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-memory-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide memory report including:
+#     - Total memory
+#     - Free memory
+#     - Swap usage
+#     - Memory pressure
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-memory-report.yml
+#
+# Notes:
+#   - Useful for diagnosing memory pressure or OOM events.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Memory summary
+      shell: free -h
+      register: mem_out
+
+    - name: Swap summary
+      shell: swapon --show || true
+      register: swap_out
+
+    - name: Memory pressure
+      shell: cat /proc/pressure/memory || true
+      register: pressure_out
+
+    - name: Display memory report
+      debug:
+        msg:
+          - "Memory: {{ mem_out.stdout }}"
+          - "Swap: {{ swap_out.stdout }}"
+          - "Pressure: {{ pressure_out.stdout }}"

@@ -1,0 +1,38 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-lifecycle-map
+# =============================================================================
+# Purpose:
+#   Provide a complete lifecycle map for the cluster, from kernel build to
+#   deployment, verification, rollback, and long-term maintenance.
+#
+# Lifecycle Stages:
+#
+#   1. Build
+#      - Builder compiles kernel
+#
+#   2. Verify
+#      - Artifact checks
+#      - Dependency checks
+#
+#   3. Deploy
+#      - Ansible rollout
+#      - Node-by-node update
+#
+#   4. Validate
+#      - Diagnostics suite
+#      - k3s workload checks
+#
+#   5. Operate
+#      - Daily/weekly/monthly runbook tasks
+#
+#   6. Recover
+#      - Rollback strategy
+#      - Incident response
+#
+#   7. Improve
+#      - Capacity planning
+#      - Maturity model
+#
+# Notes:
+#   - This file defines the authoritative lifecycle for the entire system.
+# =============================================================================

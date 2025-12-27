@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.failure-modes
+# =============================================================================
+# Purpose:
+#   Document known failure modes for distributed builds, kernel deployments,
+#   and cluster operations. This file helps diagnose issues quickly.
+#
+# Failure Modes:
+#
+#   1. distcc Not Distributing Jobs
+#      - PATH incorrect
+#      - DISTCC_HOSTS missing or wrong
+#      - distccd not running on nodes
+#
+#   2. Kernel Deployment Fails
+#      - Missing artifacts on builder
+#      - Permissions incorrect on /boot
+#      - Modules directory mismatch
+#
+#   3. Node Fails to Boot
+#      - Incorrect kernel config
+#      - Missing DTB
+#      - Corrupted /boot
+#
+#   4. k3s Not Starting
+#      - Missing overlay or br_netfilter
+#      - Modules not loaded
+#
+#   5. SD Card Corruption
+#      - Read-only rootfs
+#      - ext4 errors in dmesg
+#
+# Notes:
+#   - Update this file as new failure modes are discovered.
+# =============================================================================

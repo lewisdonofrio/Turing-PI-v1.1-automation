@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-service-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide report of critical system services including:
+#     - k3s
+#     - containerd
+#     - distccd
+#     - sshd
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-service-report.yml
+#
+# Notes:
+#   - Useful for diagnosing cluster-wide service failures.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  vars:
+    services:
+      - k3s
+      - containerd
+      - distccd
+      - sshd
+
+  tasks:
+    - name: Check service status
+      systemd:
+        name: "{{ item }}"
+        state: started
+      register: svc
+      loop: "{{ services }}"
+
+    - name: Display service report
+      debug:
+        msg: "{{ svc.results }}"

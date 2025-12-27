@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-entropy-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide entropy report including:
+#     - Available entropy
+#     - Random number generator health
+#     - Kernel RNG warnings
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-entropy-report.yml
+#
+# Notes:
+#   - Useful for diagnosing slow cryptographic operations or node stalls.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check available entropy
+      shell: cat /proc/sys/kernel/random/entropy_avail
+      register: entropy
+
+    - name: Check RNG health
+      shell: dmesg | grep -i rng || true
+      register: rng
+
+    - name: Display entropy report
+      debug:
+        msg:
+          - "Entropy: {{ entropy.stdout }}"
+          - "RNG Messages: {{ rng.stdout }}"

@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide filesystem report including:
+#     - Filesystem types
+#     - Mount options
+#     - Disk usage per mount
+#     - Read-only or degraded mounts
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-filesystem-report.yml
+#
+# Notes:
+#   - Useful for diagnosing storage issues or verifying overlayfs behavior.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show mounted filesystems
+      shell: mount | grep "^/"
+      register: mount_out
+
+    - name: Show disk usage
+      shell: df -h
+      register: df_out
+
+    - name: Show filesystem types
+      shell: lsblk -f
+      register: fs_out
+
+    - name: Display filesystem report
+      debug:
+        msg:
+          - "Mounts: {{ mount_out.stdout }}"
+          - "Disk Usage: {{ df_out.stdout }}"
+          - "Filesystem Types: {{ fs_out.stdout }}"

@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-trace-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel tracing report including:
+#     - Available tracepoints
+#     - Enabled ftrace functions
+#     - Tracing buffer size
+#     - Recent trace events (if enabled)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-trace-report.yml
+#
+# Notes:
+#   - Useful for diagnosing deep kernel issues, scheduler stalls, and latency.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: List available tracepoints
+      shell: ls /sys/kernel/debug/tracing/events 2>/dev/null | head -n 50
+      register: tracepoints
+
+    - name: Show enabled ftrace functions
+      shell: cat /sys/kernel/debug/tracing/set_ftrace_filter 2>/dev/null
+      register: ftrace
+
+    - name: Show tracing buffer size
+      shell: cat /sys/kernel/debug/tracing/buffer_size_kb 2>/dev/null
+      register: buf
+
+    - name: Display kernel trace report
+      debug:
+        msg:
+          - "Tracepoints: {{ tracepoints.stdout }}"
+          - "Ftrace Filter: {{ ftrace.stdout }}"
+          - "Buffer Size: {{ buf.stdout }}"

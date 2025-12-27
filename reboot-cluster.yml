@@ -1,0 +1,26 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/reboot-cluster.yml
+# =============================================================================
+# Purpose:
+#   Reboot all k3s cluster nodes in a controlled, staggered manner.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/reboot-cluster.yml
+#
+# Notes:
+#   - Reboots nodes in sequence to avoid cluster-wide downtime.
+#   - Waits for SSH to return before proceeding to next node.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  serial: 1
+  become: yes
+
+  tasks:
+    - name: Reboot node
+      reboot:
+        reboot_timeout: 600
+        test_command: "uname -a"

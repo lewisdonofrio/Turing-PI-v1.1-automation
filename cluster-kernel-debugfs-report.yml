@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-debugfs-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide debugfs report including:
+#     - Mounted debugfs status
+#     - Available debugfs subsystems
+#     - Kernel debug knobs
+#     - Recent debugfs warnings
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-debugfs-report.yml
+#
+# Notes:
+#   - Useful for diagnosing deep kernel issues and validating debugfs presence.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check if debugfs is mounted
+      shell: mount | grep debugfs || true
+      register: dbg_mount
+
+    - name: List debugfs subsystems
+      shell: ls /sys/kernel/debug 2>/dev/null | head -n 50
+      register: dbg_list
+
+    - name: Check for debugfs warnings
+      shell: dmesg | grep -i debugfs || true
+      register: dbg_warn
+
+    - name: Display debugfs report
+      debug:
+        msg:
+          - "DebugFS Mount: {{ dbg_mount.stdout }}"
+          - "Subsystems: {{ dbg_list.stdout }}"
+          - "Warnings: {{ dbg_warn.stdout }}"

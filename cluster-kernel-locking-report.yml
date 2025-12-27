@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-locking-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel locking report including:
+#     - Lock contention warnings
+#     - Mutex and spinlock statistics
+#     - RCU stall detection
+#     - Lockdep warnings (if enabled)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-locking-report.yml
+#
+# Notes:
+#   - Useful for diagnosing scheduler stalls, deadlocks, and kernel contention.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check for lockdep warnings
+      shell: dmesg | grep -i lockdep || true
+      register: lockdep
+
+    - name: Check for RCU stalls
+      shell: dmesg | grep -i "rcu" || true
+      register: rcu
+
+    - name: Show mutex stats (if available)
+      shell: cat /proc/lock_stat 2>/dev/null | head -n 50
+      register: lockstat
+
+    - name: Display kernel locking report
+      debug:
+        msg:
+          - "Lockdep: {{ lockdep.stdout }}"
+          - "RCU: {{ rcu.stdout }}"
+          - "LockStat: {{ lockstat.stdout }}"

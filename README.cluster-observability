@@ -1,0 +1,30 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-observability
+# =============================================================================
+# Purpose:
+#   Provide an overview of the observability tooling available in the cluster
+#   automation framework. This includes:
+#     - Health checks
+#     - Kernel diagnostics
+#     - Network diagnostics
+#     - Storage diagnostics
+#     - Power and thermal diagnostics
+#
+# Observability Components:
+#
+#   - cluster-health.yml
+#   - cluster-service-report.yml
+#   - cluster-kernel-report.yml
+#   - cluster-dmesg-report.yml
+#   - cluster-network-report.yml
+#   - cluster-storage-report.yml
+#   - cluster-temp-report.yml
+#   - cluster-power-report.yml
+#   - cluster-filesystem-integrity.yml
+#   - cluster-latency-report.yml
+#   - cluster-entropy-report.yml
+#
+# Notes:
+#   - Observability is critical for diagnosing distributed build failures.
+#   - This file serves as the index for all cluster diagnostics.
+# =============================================================================

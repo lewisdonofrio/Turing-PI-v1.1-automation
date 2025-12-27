@@ -1,0 +1,44 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-test.yml
+# =============================================================================
+# Purpose:
+#   Run a distributed compilation test across all nodes to verify distcc
+#   functionality. This compiles a small C program using distcc and reports:
+#     - Which nodes participated
+#     - Whether distribution occurred
+#     - Any failures
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-test.yml
+#
+# Notes:
+#   - This is the fastest way to confirm distcc is working cluster-wide.
+# =============================================================================
+
+---
+- hosts: builder
+  become: yes
+
+  tasks:
+    - name: Create test directory
+      file:
+        path: /tmp/distcc-test
+        state: directory
+
+    - name: Create test C file
+      copy:
+        dest: /tmp/distcc-test/test.c
+        content: |
+          int main() { return 0; }
+
+    - name: Run distributed compile
+      shell: |
+        cd /tmp/distcc-test
+        distcc -j32 gcc -c test.c -o test.o
+      register: compile_out
+
+    - name: Display compile output
+      debug:
+        msg: "{{ compile_out.stdout }}"

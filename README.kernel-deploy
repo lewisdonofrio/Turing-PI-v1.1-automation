@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.kernel-deploy
+# =============================================================================
+# Purpose:
+#   Document the process for deploying a newly built kernel from the builder
+#   node to all cluster nodes using Ansible.
+#
+# Workflow:
+#   1. Builder compiles kernel using distcc.
+#   2. Builder produces:
+#        - zImage
+#        - dtbs
+#        - modules
+#   3. Ansible playbook copies kernel artifacts to each node.
+#   4. Ansible installs modules under /lib/modules/<version>.
+#   5. Ansible updates /boot on each node.
+#   6. Ansible orchestrates a controlled reboot.
+#
+# Expected Kernel Output Paths:
+#   /home/builder/linux-rpi-k3s/arch/arm/boot/zImage
+#   /home/builder/linux-rpi-k3s/arch/arm/boot/dts/*.dtb
+#   /home/builder/linux-rpi-k3s/modules/
+#
+# Deployment Playbook (to be created):
+#   /opt/ansible-k3s-cluster/deploy-kernel.yml
+#
+# Notes:
+#   - Kernel builds occur ONLY under the builder user.
+#   - Kernel deployment occurs ONLY under the ansible user.
+#   - This separation preserves auditability and operational boundaries.
+# =============================================================================

@@ -1,0 +1,43 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/kernel-verify.yml
+# =============================================================================
+# Purpose:
+#   Verify that the deployed kernel, DTBs, and modules match the expected
+#   version after deployment.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/kernel-verify.yml
+#
+# Notes:
+#   - Compares uname -r with /lib/modules/<version>.
+#   - Confirms zImage exists and is non-empty.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check running kernel version
+      command: uname -r
+      register: uname_out
+
+    - name: Check modules directory exists
+      stat:
+        path: "/lib/modules/{{ uname_out.stdout }}"
+      register: modules_dir
+
+    - name: Check zImage exists
+      stat:
+        path: /boot/zImage
+      register: zimage_stat
+
+    - name: Display verification results
+      debug:
+        msg:
+          - "Kernel version: {{ uname_out.stdout }}"
+          - "Modules directory exists: {{ modules_dir.stat.exists }}"
+          - "zImage exists: {{ zimage_stat.stat.exists }}"
+          - "zImage size: {{ zimage_stat.stat.size }}"

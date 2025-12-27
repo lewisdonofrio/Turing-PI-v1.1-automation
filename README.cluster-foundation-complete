@@ -1,0 +1,32 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-foundation-complete
+# =============================================================================
+# Purpose:
+#   Declare the completion of the cluster's operational foundation. This file
+#   marks the transition from scaffolding → construction.
+#
+# Foundation Components:
+#
+#   1. Diagnostics
+#      - Kernel, network, filesystem, service, and hardware reports
+#
+#   2. Builder Framework
+#      - Lifecycle, prechecks, postchecks, promotion, finalization
+#
+#   3. Deployment Framework
+#      - Rollout, rollback, verification, incident response
+#
+#   4. Doctrine
+#      - Governance, boundaries, maturity, safety rails
+#
+#   5. Integrity Model
+#      - Manifest + verification script (next step)
+#
+# Next Steps:
+#   - Generate canonical manifest
+#   - Generate wc-based verification script
+#   - Begin distributed kernel build
+#
+# Notes:
+#   - This file marks the end of the foundation phase.
+# =============================================================================

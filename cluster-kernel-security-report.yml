@@ -1,0 +1,47 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-security-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel security report including:
+#     - Kernel security modules (LSM)
+#     - AppArmor/SELinux status
+#     - Kernel lockdown mode
+#     - Security warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-security-report.yml
+#
+# Notes:
+#   - Useful for diagnosing container runtime issues and kernel hardening drift.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show active LSMs
+      shell: cat /sys/kernel/security/lsm 2>/dev/null
+      register: lsm
+
+    - name: Show AppArmor status
+      shell: aa-status 2>/dev/null || true
+      register: aa
+
+    - name: Show kernel lockdown mode
+      shell: cat /sys/kernel/security/lockdown 2>/dev/null || true
+      register: lockdown
+
+    - name: Check for security warnings
+      shell: dmesg | grep -i security || true
+      register: warn
+
+    - name: Display kernel security report
+      debug:
+        msg:
+          - "LSM: {{ lsm.stdout }}"
+          - "AppArmor: {{ aa.stdout }}"
+          - "Lockdown: {{ lockdown.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

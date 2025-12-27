@@ -1,0 +1,47 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel report including:
+#     - Running kernel version
+#     - Kernel command line
+#     - Module count
+#     - Kernel build timestamp
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-report.yml
+#
+# Notes:
+#   - Useful for verifying kernel consistency across nodes.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get kernel version
+      command: uname -r
+      register: kernel_ver
+
+    - name: Get kernel command line
+      command: cat /proc/cmdline
+      register: cmdline
+
+    - name: Count loaded modules
+      command: lsmod | wc -l
+      register: mod_count
+
+    - name: Get kernel build timestamp
+      command: uname -v
+      register: build_ts
+
+    - name: Display kernel report
+      debug:
+        msg:
+          - "Kernel Version: {{ kernel_ver.stdout }}"
+          - "Command Line: {{ cmdline.stdout }}"
+          - "Loaded Modules: {{ mod_count.stdout }}"
+          - "Build Timestamp: {{ build_ts.stdout }}"

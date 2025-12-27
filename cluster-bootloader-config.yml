@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-bootloader-config.yml
+# =============================================================================
+# Purpose:
+#   Collect bootloader configuration details across all nodes, including:
+#     - /boot/config.txt
+#     - /boot/cmdline.txt
+#     - EEPROM bootloader settings (if available)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-bootloader-config.yml
+#
+# Notes:
+#   - Useful for diagnosing boot issues, kernel parameter drift, or DTB issues.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Read config.txt
+      shell: cat /boot/config.txt 2>/dev/null
+      register: config_txt
+
+    - name: Read cmdline.txt
+      shell: cat /boot/cmdline.txt 2>/dev/null
+      register: cmdline_txt
+
+    - name: Read EEPROM bootloader config
+      shell: rpi-eeprom-config 2>/dev/null || true
+      register: eeprom_cfg
+
+    - name: Display bootloader config report
+      debug:
+        msg:
+          - "config.txt: {{ config_txt.stdout }}"
+          - "cmdline.txt: {{ cmdline_txt.stdout }}"
+          - "EEPROM Config: {{ eeprom_cfg.stdout }}"

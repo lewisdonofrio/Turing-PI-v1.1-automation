@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.ansible
+# =============================================================================
+# Purpose:
+#   Document the structure, ownership, and operational role of the Ansible
+#   automation repository used to manage the k3s cluster.
+#
+# Ownership:
+#   - This directory is owned by the 'ansible' user.
+#   - The 'ansible' user is the ONLY account that runs Ansible playbooks.
+#   - The 'builder' user does NOT run Ansible and does NOT modify this repo.
+#
+# Rationale:
+#   The Ansible repository defines the automation boundary for the cluster.
+#   All configuration, provisioning, deployment, and orchestration tasks
+#   originate from this directory under the 'ansible' service account.
+#
+# Key Directories:
+#   /opt/ansible-k3s-cluster/inventory/
+#       Contains the authoritative inventory file (hosts).
+#
+#   /opt/ansible-k3s-cluster/roles/
+#       Optional directory for reusable Ansible roles.
+#
+#   /opt/ansible-k3s-cluster/playbooks/
+#       Optional directory for grouping playbooks.
+#
+# Key Files:
+#   /opt/ansible-k3s-cluster/inventory/hosts
+#       Defines all cluster nodes using FQDNs.
+#
+#   /opt/ansible-k3s-cluster/distcc-prepare.yml
+#       Installs and configures distcc on all cluster nodes.
+#
+# Usage:
+#   ansible-playbook -i /opt/ansible-k3s-cluster/inventory/hosts <playbook.yml>
+#
+# Notes:
+#   - This directory is NOT writable by 'builder'.
+#   - This directory is NOT used for kernel builds.
+#   - This directory is the authoritative automation control plane.
+# =============================================================================

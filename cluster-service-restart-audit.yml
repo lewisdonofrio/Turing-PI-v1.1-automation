@@ -1,0 +1,37 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-service-restart-audit.yml
+# =============================================================================
+# Purpose:
+#   Detect abnormal service restart patterns across all nodes, including:
+#     - Restart frequency
+#     - Crash loops
+#     - k3s and distccd stability
+#     - Systemd restart counters
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-service-restart-audit.yml
+#
+# Notes:
+#   - This is the final service-level audit before operational verification.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show restart counters
+      shell: systemctl show -p NRestarts --value k3s distccd 2>/dev/null || true
+      register: restarts
+
+    - name: Detect crash loops
+      shell: journalctl -u k3s -u distccd --since "1 hour ago" | grep -i "failed" || true
+      register: loops
+
+    - name: Display restart audit
+      debug:
+        msg:
+          - "Restart Counters: {{ restarts.stdout }}"
+          - "Crash Loops: {{ loops.stdout }}"

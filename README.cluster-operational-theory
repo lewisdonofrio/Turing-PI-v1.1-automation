@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-theory
+# =============================================================================
+# Purpose:
+#   Provide the high-level operational theory behind the cluster automation
+#   framework. This explains *why* the system is structured the way it is.
+#
+# Operational Principles:
+#
+#   1. Separation of Duties
+#      - Builder builds
+#      - Ansible deploys
+#      - Nodes execute
+#
+#   2. Immutable Artifacts
+#      - Builder produces canonical kernel artifacts
+#      - Nodes never modify them
+#
+#   3. Observability First
+#      - Every subsystem has a diagnostic playbook
+#
+#   4. Reproducibility
+#      - All operations documented
+#      - All files ASCII-safe and nano-safe
+#
+#   5. Safety and Rollback
+#      - Every deployment must be reversible
+#
+# Notes:
+#   - This file defines the philosophy behind the entire framework.
+# =============================================================================

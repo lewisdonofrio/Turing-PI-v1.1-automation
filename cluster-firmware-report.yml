@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-firmware-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide firmware report including:
+#     - Raspberry Pi firmware version
+#     - Bootloader version
+#     - EEPROM status
+#     - GPU firmware version (if applicable)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-firmware-report.yml
+#
+# Notes:
+#   - Useful for diagnosing boot issues or verifying firmware consistency.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get bootloader version
+      shell: vcgencmd bootloader_version || true
+      register: bootloader
+
+    - name: Get firmware version
+      shell: vcgencmd version || true
+      register: fw_version
+
+    - name: Get EEPROM status
+      shell: rpi-eeprom-update || true
+      register: eeprom
+
+    - name: Display firmware report
+      debug:
+        msg:
+          - "Bootloader: {{ bootloader.stdout }}"
+          - "Firmware: {{ fw_version.stdout }}"
+          - "EEPROM: {{ eeprom.stdout }}"

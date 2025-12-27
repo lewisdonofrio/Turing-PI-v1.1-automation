@@ -1,0 +1,39 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-incident-response
+# =============================================================================
+# Purpose:
+#   Define the incident response workflow for kernel failures, node outages,
+#   distcc failures, or cluster instability.
+#
+# Incident Response Workflow:
+#
+#   1. Detect
+#      - cluster-health.yml
+#      - cluster-dmesg-report.yml
+#      - cluster-network-report.yml
+#
+#   2. Triage
+#      - Identify failing node(s)
+#      - Check kernel logs
+#      - Check distccd status
+#
+#   3. Contain
+#      - Drain workloads (if needed)
+#      - Disable distccd on unstable nodes
+#
+#   4. Remediate
+#      - Roll back kernel
+#      - Restart services
+#      - Replace failing hardware
+#
+#   5. Recover
+#      - Validate cluster stability
+#      - Re-enable distccd
+#
+#   6. Document
+#      - Update incident log
+#      - Record root cause
+#
+# Notes:
+#   - This file defines the authoritative incident response workflow.
+# =============================================================================

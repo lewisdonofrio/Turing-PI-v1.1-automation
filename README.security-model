@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.security-model
+# =============================================================================
+# Purpose:
+#   Document the security boundaries, privilege separation, and operational
+#   constraints of the k3s cluster automation and build system.
+#
+# Security Principles:
+#   1. Separation of Duties
+#      - 'ansible' performs automation.
+#      - 'builder' performs kernel compilation.
+#      - Neither user crosses into the other's domain.
+#
+#   2. Least Privilege
+#      - 'ansible' has no sudo on cluster nodes.
+#      - 'builder' has no SSH access to cluster nodes.
+#
+#   3. Explicit Boundaries
+#      - Kernel tree lives under /home/builder.
+#      - Automation repo lives under /opt/ansible-k3s-cluster.
+#      - SSH keys are isolated per user.
+#
+#   4. Reproducibility
+#      - All paths are absolute.
+#      - All scripts are ASCII-safe.
+#      - All playbooks are idempotent.
+#
+# User Roles:
+#   ansible:
+#     - Runs playbooks
+#     - Deploys kernels
+#     - Manages distccd on nodes
+#
+#   builder:
+#     - Builds kernels
+#     - Runs distcc client
+#     - Maintains kernel source tree
+#
+# Notes:
+#   - This model ensures auditability and long-term maintainability.
+#   - No user has unilateral control over the entire system.
+# =============================================================================

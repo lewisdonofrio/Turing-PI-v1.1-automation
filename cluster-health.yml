@@ -1,0 +1,50 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-health.yml
+# =============================================================================
+# Purpose:
+#   Perform a health check across all k3s cluster nodes. This includes:
+#     - Disk usage
+#     - Memory usage
+#     - CPU load
+#     - System uptime
+#     - k3s service status
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-health.yml
+#
+# Notes:
+#   - Provides a quick operational snapshot of cluster state.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check disk usage
+      shell: df -h /
+      register: disk_usage
+
+    - name: Check memory usage
+      shell: free -h
+      register: mem_usage
+
+    - name: Check CPU load
+      shell: uptime
+      register: load_avg
+
+    - name: Check k3s service status
+      systemd:
+        name: k3s
+        state: started
+      register: k3s_status
+
+    - name: Display cluster health summary
+      debug:
+        msg:
+          - "Disk: {{ disk_usage.stdout }}"
+          - "Memory: {{ mem_usage.stdout }}"
+          - "Load: {{ load_avg.stdout }}"
+          - "k3s: {{ k3s_status }}"

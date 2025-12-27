@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-upgrade-path
+# =============================================================================
+# Purpose:
+#   Document the recommended upgrade path for:
+#     - Kernel versions
+#     - distcc versions
+#     - Raspberry Pi firmware
+#     - k3s versions
+#
+# Upgrade Path:
+#
+#   1. Kernel Upgrade
+#      - Build new kernel on builder
+#      - Verify artifacts
+#      - Deploy via deploy-kernel.yml
+#      - Run verification pipeline
+#
+#   2. distcc Upgrade
+#      - Upgrade builder first
+#      - Upgrade worker nodes
+#      - Run distcc-test.yml
+#
+#   3. Firmware Upgrade
+#      - Update EEPROM
+#      - Update /boot firmware files
+#      - Reboot nodes sequentially
+#
+#   4. k3s Upgrade
+#      - Upgrade controller first
+#      - Upgrade workers
+#      - Validate workloads
+#
+# Notes:
+#   - This file defines the authoritative upgrade sequence.
+# =============================================================================

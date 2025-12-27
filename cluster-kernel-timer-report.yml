@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-timer-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel timer report including:
+#     - Active kernel timers
+#     - High-resolution timer usage
+#     - Softirq timer activity
+#     - Timer-related warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-timer-report.yml
+#
+# Notes:
+#   - Useful for diagnosing latency spikes, scheduler stalls, and timing drift.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show active kernel timers
+      shell: cat /proc/timer_list 2>/dev/null | head -n 200
+      register: timers
+
+    - name: Show high-resolution timer info
+      shell: cat /proc/timer_stats 2>/dev/null || true
+      register: hrtimers
+
+    - name: Check for timer warnings in dmesg
+      shell: dmesg | grep -i timer || true
+      register: timer_warn
+
+    - name: Display kernel timer report
+      debug:
+        msg:
+          - "Timers: {{ timers.stdout }}"
+          - "High-Res Timers: {{ hrtimers.stdout }}"
+          - "Timer Warnings: {{ timer_warn.stdout }}"

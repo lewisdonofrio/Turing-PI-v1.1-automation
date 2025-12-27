@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-saturation-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide network saturation report including:
+#     - RX/TX saturation
+#     - Packet drops
+#     - Queue overflows
+#     - Distcc traffic load
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-network-saturation-report.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc bottlenecks and k3s network congestion.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show interface statistics
+      shell: cat /proc/net/dev
+      register: dev
+
+    - name: Show queue stats
+      shell: tc -s qdisc show 2>/dev/null
+      register: qdisc
+
+    - name: Check for saturation warnings
+      shell: dmesg | grep -i "net.*drop" || true
+      register: warn
+
+    - name: Display saturation report
+      debug:
+        msg:
+          - "Interface Stats: {{ dev.stdout }}"
+          - "Queue Stats: {{ qdisc.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

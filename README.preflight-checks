@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.preflight-checks
+# =============================================================================
+# Purpose:
+#   Document the required preflight checks before:
+#     - Kernel deployment
+#     - Kernel rollback
+#     - Distributed kernel builds
+#     - Cluster-wide maintenance
+#
+# Required Checks:
+#
+#   1. SSH Connectivity
+#      ansible -m ping k3s_cluster
+#
+#   2. distccd Availability
+#      ansible-playbook distcc-status.yml
+#
+#   3. Disk Space
+#      ansible-playbook cluster-storage-report.yml
+#
+#   4. Memory and Load
+#      ansible-playbook cluster-health.yml
+#
+#   5. Kernel Modules
+#      ansible-playbook cluster-kernel-report.yml
+#
+#   6. Power and Thermal
+#      ansible-playbook cluster-temp-report.yml
+#      ansible-playbook cluster-power-report.yml
+#
+# Notes:
+#   - Preflight checks reduce risk of failed deployments.
+#   - This file defines the authoritative preflight workflow.
+# =============================================================================

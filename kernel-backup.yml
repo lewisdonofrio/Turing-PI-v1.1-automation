@@ -1,0 +1,46 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/kernel-backup.yml
+# =============================================================================
+# Purpose:
+#   Back up the currently installed kernel, DTBs, and modules on each cluster
+#   node before deploying a new kernel. This ensures rollback capability.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/kernel-backup.yml
+#
+# Notes:
+#   - Backups are stored under /var/backups/kernel-<timestamp> on each node.
+#   - Safe to re-run; creates a new timestamped backup each time.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  vars:
+    backup_dir: "/var/backups/kernel-{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+  tasks:
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Back up /boot
+      synchronize:
+        src: /boot/
+        dest: "{{ backup_dir }}/boot/"
+        recursive: yes
+
+    - name: Back up /lib/modules
+      synchronize:
+        src: /lib/modules/
+        dest: "{{ backup_dir }}/modules/"
+        recursive: yes
+
+    - name: Display backup location
+      debug:
+        msg: "Kernel backup stored at {{ backup_dir }}"

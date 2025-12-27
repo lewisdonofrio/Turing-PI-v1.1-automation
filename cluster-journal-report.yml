@@ -1,0 +1,32 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-journal-report.yml
+# =============================================================================
+# Purpose:
+#   Collect the last 200 lines of systemd journal logs from each cluster node.
+#   Useful for diagnosing:
+#     - service failures
+#     - kernel issues
+#     - boot anomalies
+#     - k3s startup problems
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-journal-report.yml
+#
+# Notes:
+#   - Does not modify system state.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Collect journal logs
+      shell: journalctl -n 200 --no-pager
+      register: journal_out
+
+    - name: Display journal summary
+      debug:
+        msg: "{{ journal_out.stdout }}"

@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-capabilities-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel capabilities report including:
+#     - Enabled kernel capabilities
+#     - Bounding set
+#     - Ambient capabilities
+#     - Capability-related warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-kernel-capabilities-report.yml
+#
+# Notes:
+#   - Useful for diagnosing container runtime issues and kernel hardening drift.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show process capabilities
+      shell: cat /proc/self/status | grep Cap
+      register: caps
+
+    - name: Show bounding set
+      shell: cat /proc/self/status | grep CapBnd
+      register: bnd
+
+    - name: Check for capability warnings
+      shell: dmesg | grep -i cap || true
+      register: warn
+
+    - name: Display capability report
+      debug:
+        msg:
+          - "Capabilities: {{ caps.stdout }}"
+          - "Bounding Set: {{ bnd.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

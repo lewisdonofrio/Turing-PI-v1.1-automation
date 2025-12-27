@@ -1,0 +1,46 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-benchmark.yml
+# =============================================================================
+# Purpose:
+#   Benchmark distcc performance across the cluster by compiling a small,
+#   synthetic C workload on each node. This helps validate:
+#     - job distribution
+#     - CPU load
+#     - network throughput
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-benchmark.yml
+#
+# Notes:
+#   - Uses a trivial C program compiled repeatedly.
+#   - Does NOT modify system state.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Create benchmark directory
+      file:
+        path: /tmp/distcc-bench
+        state: directory
+
+    - name: Create trivial C program
+      copy:
+        dest: /tmp/distcc-bench/test.c
+        content: |
+          int main() { return 0; }
+
+    - name: Run benchmark compile
+      shell: |
+        for i in {1..50}; do
+          gcc -c /tmp/distcc-bench/test.c -o /tmp/distcc-bench/test_$i.o
+        done
+      register: bench_out
+
+    - name: Display benchmark results
+      debug:
+        msg: "{{ bench_out.stdout }}"

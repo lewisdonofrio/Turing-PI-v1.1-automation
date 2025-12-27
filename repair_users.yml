@@ -1,0 +1,75 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/repair_users.yml
+# =============================================================================
+# Purpose:
+#   Repair and normalize user accounts across the cluster.
+#   This playbook CREATES, FIXES, or REMOVES accounts as needed.
+#
+# Actions performed:
+#   - Ensure ansible user exists on all nodes
+#   - Ensure ansible has passwordless sudo
+#   - Ensure ansible has authorized_keys directory
+#   - Ensure builder exists ONLY on kubenode1
+#   - Ensure builder has sudo on kubenode1
+#   - Remove unexpected human-level accounts (UID >= 1000)
+# =============================================================================
+
+---
+- hosts: all
+  become: yes
+  tasks:
+
+    - name: Ensure ansible user exists
+      user:
+        name: ansible
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Ensure ansible sudoers file exists
+      copy:
+        dest: /etc/sudoers.d/99-ansible
+        content: "ansible ALL=(ALL) NOPASSWD: ALL\n"
+        owner: root
+        group: root
+        mode: "0440"
+
+    - name: Ensure ansible .ssh directory exists
+      file:
+        path: /home/ansible/.ssh
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0700"
+
+    - name: Get list of human-level accounts
+      command: "awk -F: '$3 >= 1000 {print $1}' /etc/passwd"
+      register: user_list
+
+    - name: Remove unexpected users
+      user:
+        name: "{{ item }}"
+        state: absent
+        remove: yes
+      loop: "{{ user_list.stdout_lines }}"
+      when: item not in ['ansible', 'builder', 'alarm', 'nobody'] and
+            not (inventory_hostname != 'kubenode1' and item == 'builder')
+
+- hosts: kubenode1
+  become: yes
+  tasks:
+
+    - name: Ensure builder user exists on kubenode1
+      user:
+        name: builder
+        shell: /bin/bash
+        create_home: yes
+        state: present
+
+    - name: Ensure builder sudoers file exists
+      copy:
+        dest: /etc/sudoers.d/99-builder
+        content: "builder ALL=(ALL) ALL\n"
+        owner: root
+        group: root
+        mode: "0440"

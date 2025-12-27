@@ -1,0 +1,33 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.operational-boundaries
+# =============================================================================
+# Purpose:
+#   Document the operational boundaries between:
+#     - builder user
+#     - ansible user
+#     - cluster nodes
+#   This ensures clear separation of duties, auditability, and reproducibility.
+#
+# Boundaries:
+#
+#   Builder User:
+#     - Owns kernel source tree.
+#     - Runs distributed kernel builds.
+#     - Does NOT run Ansible.
+#     - Does NOT modify cluster nodes directly.
+#
+#   Ansible User:
+#     - Deploys kernels.
+#     - Manages distccd on worker nodes.
+#     - Performs cluster-wide automation.
+#     - Does NOT compile kernels.
+#
+#   Cluster Nodes:
+#     - Run distccd.
+#     - Run k3s workloads.
+#     - Receive kernel artifacts from ansible.
+#
+# Notes:
+#   - These boundaries prevent privilege overlap.
+#   - Ensures long-term maintainability and operational clarity.
+# =============================================================================

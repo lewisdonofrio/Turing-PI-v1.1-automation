@@ -1,0 +1,26 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.backup-restore
+# =============================================================================
+# Purpose:
+#   Document the backup and restore workflow for kernel deployments and system
+#   state across the k3s cluster.
+#
+# Backup Workflow:
+#   1. Run kernel-backup.yml before deploying a new kernel.
+#   2. Backups are stored under:
+#        /var/backups/kernel-<timestamp>
+#   3. Each backup contains:
+#        - /boot
+#        - /lib/modules
+#
+# Restore Workflow:
+#   1. Identify backup directory on each node.
+#   2. Run kernel-rollback.yml.
+#   3. Verify kernel version using:
+#        ansible-playbook kernel-verify.yml
+#
+# Notes:
+#   - Backups are node-local.
+#   - Backups are timestamped for auditability.
+#   - Rollback is safe and idempotent.
+# =============================================================================

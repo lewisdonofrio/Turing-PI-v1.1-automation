@@ -1,0 +1,45 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-config-diff.yml
+# =============================================================================
+# Purpose:
+#   Compare the running kernel config on each node with the builder's reference
+#   config. This detects:
+#     - Missing options
+#     - Unexpected changes
+#     - Drift between nodes
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-config-diff.yml
+#
+# Notes:
+#   - Requires builder to export reference config to /opt/kconfig.ref
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Ensure reference config exists
+      stat:
+        path: /opt/kconfig.ref
+      register: ref
+
+    - name: Fail if reference config missing
+      fail:
+        msg: "Reference config /opt/kconfig.ref missing on controller"
+      when: not ref.stat.exists
+
+    - name: Extract running kernel config
+      shell: zcat /proc/config.gz
+      register: running
+
+    - name: Compare configs
+      shell: diff -u /opt/kconfig.ref /proc/config.gz || true
+      register: diff_out
+
+    - name: Display config diff
+      debug:
+        msg: "{{ diff_out.stdout }}"

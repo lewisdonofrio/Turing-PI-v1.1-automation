@@ -1,0 +1,32 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-boundaries
+# =============================================================================
+# Purpose:
+#   Define the operational boundaries between builder, ansible automation, and
+#   cluster nodes. This ensures clean separation of duties and safe operations.
+#
+# Boundaries:
+#
+#   1. Builder
+#      - Owns kernel source
+#      - Owns build artifacts
+#      - Owns build metadata
+#
+#   2. Ansible
+#      - Owns deployment
+#      - Owns diagnostics
+#      - Owns rollback
+#
+#   3. Nodes
+#      - Execute workloads
+#      - Run distccd
+#      - Report health
+#
+# Enforcement:
+#   - No node modifies artifacts
+#   - No ansible modifies source
+#   - No builder modifies node state
+#
+# Notes:
+#   - These boundaries prevent accidental cross-contamination of responsibilities.
+# =============================================================================

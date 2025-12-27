@@ -1,0 +1,46 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-cpu-frequency-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide CPU frequency report including:
+#     - Current CPU frequency
+#     - Minimum/maximum scaling frequencies
+#     - Governor in use
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-cpu-frequency-report.yml
+#
+# Notes:
+#   - Useful for diagnosing throttling, performance issues, or misconfigured governors.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Read current CPU frequency
+      shell: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null
+      register: cur_freq
+
+    - name: Read min CPU frequency
+      shell: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq 2>/dev/null
+      register: min_freq
+
+    - name: Read max CPU frequency
+      shell: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq 2>/dev/null
+      register: max_freq
+
+    - name: Read governor
+      shell: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null
+      register: governor
+
+    - name: Display CPU frequency report
+      debug:
+        msg:
+          - "Current: {{ cur_freq.stdout }}"
+          - "Min: {{ min_freq.stdout }}"
+          - "Max: {{ max_freq.stdout }}"
+          - "Governor: {{ governor.stdout }}"

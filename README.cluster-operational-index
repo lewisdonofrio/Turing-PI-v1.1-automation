@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-index
+# =============================================================================
+# Purpose:
+#   Provide a master index of all operational documents, diagnostics, workflows,
+#   and doctrine files. This is the top-level map of the entire framework.
+#
+# Sections:
+#
+#   1. Diagnostics
+#      - All cluster-*report.yml files
+#
+#   2. Build System
+#      - Builder READMEs
+#      - Build scripts
+#
+#   3. Deployment
+#      - Kernel deploy/rollback playbooks
+#
+#   4. Observability
+#      - Health, storage, network, kernel, thermal, power
+#
+#   5. Doctrine
+#      - Scheduling
+#      - Incident response
+#      - Upgrade path
+#      - Operational maturity
+#
+# Notes:
+#   - This file is the authoritative top-level index.
+# =============================================================================

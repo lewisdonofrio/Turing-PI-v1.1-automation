@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-maturity
+# =============================================================================
+# Purpose:
+#   Define the operational maturity model for the cluster. This helps guide
+#   long-term improvements and ensures the system evolves predictably.
+#
+# Maturity Levels:
+#
+#   Level 1 — Basic
+#     - Manual builds
+#     - Minimal diagnostics
+#
+#   Level 2 — Structured
+#     - Distributed builds
+#     - Preflight checks
+#     - Basic rollback
+#
+#   Level 3 — Observability
+#     - Full diagnostics suite
+#     - Drift detection
+#     - Kernel introspection
+#
+#   Level 4 — Automation
+#     - Automated deploy/rollback
+#     - Automated verification
+#
+#   Level 5 — Resilience
+#     - Incident response workflows
+#     - Capacity planning
+#     - Integrity verification
+#
+# Notes:
+#   - This file defines the long-term operational roadmap.
+# =============================================================================

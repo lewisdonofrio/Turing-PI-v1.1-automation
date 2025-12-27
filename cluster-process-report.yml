@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-process-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide process report including:
+#     - Top CPU-consuming processes
+#     - Top memory-consuming processes
+#     - Total process count
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-process-report.yml
+#
+# Notes:
+#   - Useful for diagnosing runaway processes or resource contention.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Top CPU processes
+      shell: ps -eo pid,ppid,cmd,%cpu --sort=-%cpu | head -n 10
+      register: cpu_out
+
+    - name: Top memory processes
+      shell: ps -eo pid,ppid,cmd,%mem --sort=-%mem | head -n 10
+      register: mem_out
+
+    - name: Process count
+      shell: ps aux | wc -l
+      register: count_out
+
+    - name: Display process report
+      debug:
+        msg:
+          - "Top CPU: {{ cpu_out.stdout }}"
+          - "Top Memory: {{ mem_out.stdout }}"
+          - "Process Count: {{ count_out.stdout }}"

@@ -1,0 +1,30 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-diagnostics-index
+# =============================================================================
+# Purpose:
+#   Provide a master index of all diagnostic playbooks available in the cluster
+#   automation framework. This serves as the authoritative reference for
+#   troubleshooting and observability.
+#
+# Diagnostics Index:
+#
+#   - cluster-health.yml
+#   - cluster-service-report.yml
+#   - cluster-kernel-report.yml
+#   - cluster-dmesg-report.yml
+#   - cluster-filesystem-report.yml
+#   - cluster-filesystem-integrity.yml
+#   - cluster-storage-report.yml
+#   - cluster-temp-report.yml
+#   - cluster-power-report.yml
+#   - cluster-latency-report.yml
+#   - cluster-entropy-report.yml
+#   - cluster-cgroup-report.yml
+#   - cluster-module-dependency-report.yml
+#   - cluster-cpu-frequency-report.yml
+#   - cluster-rng-report.yml
+#   - cluster-bootloader-config.yml
+#
+# Notes:
+#   - This file is the top-level map for all cluster diagnostics.
+# =============================================================================

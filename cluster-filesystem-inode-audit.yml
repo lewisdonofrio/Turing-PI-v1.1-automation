@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-inode-audit.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide inode and filesystem quota audit including:
+#     - Inode usage
+#     - Inode exhaustion warnings
+#     - Filesystem type and mount options
+#     - SD card wear indicators (if exposed)
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-filesystem-inode-audit.yml
+#
+# Notes:
+#   - Useful for diagnosing SD card degradation and inode starvation.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show inode usage
+      shell: df -i
+      register: inodes
+
+    - name: Show filesystem types
+      shell: mount | grep "^/dev"
+      register: mounts
+
+    - name: Check for inode exhaustion warnings
+      shell: dmesg | grep -i inode || true
+      register: warn
+
+    - name: Display inode audit
+      debug:
+        msg:
+          - "Inodes: {{ inodes.stdout }}"
+          - "Mounts: {{ mounts.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

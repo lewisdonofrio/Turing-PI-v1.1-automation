@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-config-audit.yml
+# =============================================================================
+# Purpose:
+#   Audit kernel configuration across all nodes by comparing:
+#     - Running kernel config
+#     - Reference config
+#     - Required k3s options
+#     - Missing or mismatched options
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-kernel-config-audit.yml
+#
+# Notes:
+#   - Useful for detecting config drift and ensuring k3s compatibility.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Extract running kernel config
+      shell: zcat /proc/config.gz
+      register: running
+
+    - name: Compare with reference config
+      shell: diff -u /opt/kconfig.ref /proc/config.gz || true
+      register: diffout
+
+    - name: Check for missing k3s-required options
+      shell: |
+        grep -E "CONFIG_BRIDGE|CONFIG_VETH|CONFIG_OVERLAY_FS" /proc/config.gz || true
+      register: k3sreq
+
+    - name: Display config audit
+      debug:
+        msg:
+          - "Diff: {{ diffout.stdout }}"
+          - "k3s-required: {{ k3sreq.stdout }}"

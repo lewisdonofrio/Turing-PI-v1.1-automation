@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-sysctl-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide sysctl report including:
+#     - Network sysctl values
+#     - Kernel sysctl values
+#     - Security-related sysctl values
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-sysctl-report.yml
+#
+# Notes:
+#   - Useful for verifying k3s prerequisites such as br_netfilter settings.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get network sysctl values
+      shell: sysctl net.* | sort
+      register: net_sysctl
+
+    - name: Get kernel sysctl values
+      shell: sysctl kernel.* | sort
+      register: kernel_sysctl
+
+    - name: Get security sysctl values
+      shell: sysctl fs.* | sort
+      register: fs_sysctl
+
+    - name: Display sysctl report
+      debug:
+        msg:
+          - "Network: {{ net_sysctl.stdout }}"
+          - "Kernel: {{ kernel_sysctl.stdout }}"
+          - "Filesystem: {{ fs_sysctl.stdout }}"

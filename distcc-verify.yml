@@ -1,0 +1,43 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-verify.yml
+# =============================================================================
+# Purpose:
+#   Verify that distccd is running and accepting jobs on all cluster nodes.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-verify.yml
+#
+# Notes:
+#   - Checks service status.
+#   - Confirms port 3632 is listening.
+#   - Confirms distccd binary exists.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check distccd service status
+      systemd:
+        name: distccd
+        state: started
+      register: distccd_status
+
+    - name: Verify distccd binary exists
+      stat:
+        path: /usr/bin/distccd
+      register: distccd_bin
+
+    - name: Check if port 3632 is listening
+      shell: ss -tulpn | grep 3632 || true
+      register: distccd_port
+
+    - name: Display verification results
+      debug:
+        msg:
+          - "Service: {{ distccd_status }}"
+          - "Binary exists: {{ distccd_bin.stat.exists }}"
+          - "Port 3632: {{ distccd_port.stdout }}"

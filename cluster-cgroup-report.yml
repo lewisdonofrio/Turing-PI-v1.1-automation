@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-cgroup-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide cgroup report including:
+#     - cgroup version (v1/v2)
+#     - Mounted controllers
+#     - Memory/cpu controller availability
+#     - k3s-required controllers
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-cgroup-report.yml
+#
+# Notes:
+#   - Useful for diagnosing container runtime issues.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show cgroup mounts
+      shell: mount | grep cgroup || true
+      register: cg_mounts
+
+    - name: Show cgroup version
+      shell: cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo "cgroup v1"
+      register: cg_version
+
+    - name: Show available controllers
+      shell: ls /sys/fs/cgroup/ 2>/dev/null
+      register: cg_controllers
+
+    - name: Display cgroup report
+      debug:
+        msg:
+          - "Cgroup Version: {{ cg_version.stdout }}"
+          - "Controllers: {{ cg_controllers.stdout }}"
+          - "Mounts: {{ cg_mounts.stdout }}"

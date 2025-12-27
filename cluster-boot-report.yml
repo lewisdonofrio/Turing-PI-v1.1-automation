@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-boot-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide boot report including:
+#     - Bootloader version
+#     - Boot partition contents
+#     - Kernel timestamps
+#     - Boot duration
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-boot-report.yml
+#
+# Notes:
+#   - Useful for diagnosing boot issues after kernel deployment.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show bootloader version
+      shell: vcgencmd bootloader_version || true
+      register: bootloader
+
+    - name: List /boot contents
+      shell: ls -lh /boot
+      register: boot_ls
+
+    - name: Show boot duration
+      shell: systemd-analyze || true
+      register: boot_time
+
+    - name: Display boot report
+      debug:
+        msg:
+          - "Bootloader: {{ bootloader.stdout }}"
+          - "/boot Contents: {{ boot_ls.stdout }}"
+          - "Boot Duration: {{ boot_time.stdout }}"

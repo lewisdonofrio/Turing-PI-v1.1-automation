@@ -1,0 +1,33 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-sre-principles
+# =============================================================================
+# Purpose:
+#   Define the Site Reliability Engineering (SRE) principles applied to the
+#   cluster automation framework. This ensures long-term reliability and
+#   operational excellence.
+#
+# SRE Principles:
+#
+#   1. Eliminate Toil
+#      - Automate diagnostics
+#      - Automate deploy/rollback
+#
+#   2. Observability Everywhere
+#      - Every subsystem has a report
+#      - Every report is ASCII-safe
+#
+#   3. Reduce Mean Time to Recovery (MTTR)
+#      - Fast rollback
+#      - Fast diagnostics
+#
+#   4. Enforce Reproducibility
+#      - Deterministic builds
+#      - Deterministic deployments
+#
+#   5. Design for Failure
+#      - Assume SD card corruption
+#      - Assume node outages
+#
+# Notes:
+#   - This file defines the SRE philosophy behind the cluster.
+# =============================================================================

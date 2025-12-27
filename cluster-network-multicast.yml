@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-multicast.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide multicast and service-discovery report including:
+#     - Multicast route table
+#     - IGMP membership
+#     - Avahi/mDNS status
+#     - Multicast packet counters
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-multicast.yml
+#
+# Notes:
+#   - Useful for diagnosing service discovery issues and cluster node visibility.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show multicast routing table
+      shell: ip mroute 2>/dev/null || true
+      register: mroute
+
+    - name: Show IGMP membership
+      shell: cat /proc/net/igmp 2>/dev/null
+      register: igmp
+
+    - name: Check mDNS/Avahi status
+      shell: systemctl status avahi-daemon 2>/dev/null || true
+      register: avahi
+
+    - name: Display multicast report
+      debug:
+        msg:
+          - "Multicast Routes: {{ mroute.stdout }}"
+          - "IGMP: {{ igmp.stdout }}"
+          - "Avahi: {{ avahi.stdout }}"

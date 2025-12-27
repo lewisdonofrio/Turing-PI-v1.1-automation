@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-integrity-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide filesystem integrity report including:
+#     - Filesystem errors
+#     - Read-only remount events
+#     - Corruption indicators
+#     - SD card I/O error patterns
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-filesystem-integrity-report.yml
+#
+# Notes:
+#   - Useful for detecting early SD card failure and filesystem corruption.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check for filesystem errors
+      shell: dmesg | grep -i "ext4" || true
+      register: ext4
+
+    - name: Check for read-only remounts
+      shell: dmesg | grep -i "remount-ro" || true
+      register: ro
+
+    - name: Check for I/O errors
+      shell: dmesg | grep -i "I/O error" || true
+      register: io
+
+    - name: Display filesystem integrity report
+      debug:
+        msg:
+          - "EXT4: {{ ext4.stdout }}"
+          - "Remount-RO: {{ ro.stdout }}"
+          - "I/O Errors: {{ io.stdout }}"

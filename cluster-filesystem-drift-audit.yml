@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-drift-audit.yml
+# =============================================================================
+# Purpose:
+#   Detect filesystem drift across all nodes by comparing:
+#     - Critical directory checksums
+#     - Unexpected file additions/removals
+#     - Permission drift
+#     - Timestamp anomalies
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-filesystem-drift-audit.yml
+#
+# Notes:
+#   - This is the final diagnostic needed before manifest-based verification.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Hash critical directories
+      shell: find /boot /etc /usr/lib -type f -exec sha256sum {} \; 2>/dev/null | sort
+      register: hashes
+
+    - name: Detect permission drift
+      shell: find /boot /etc -type f -perm -o+w 2>/dev/null
+      register: perms
+
+    - name: Detect timestamp anomalies
+      shell: find /boot /etc -mtime -1 2>/dev/null
+      register: recent
+
+    - name: Display drift audit
+      debug:
+        msg:
+          - "Hashes: {{ hashes.stdout }}"
+          - "Writable Files: {{ perms.stdout }}"
+          - "Recently Modified: {{ recent.stdout }}"

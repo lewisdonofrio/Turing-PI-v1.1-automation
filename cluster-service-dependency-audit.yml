@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-service-dependency-audit.yml
+# =============================================================================
+# Purpose:
+#   Audit service dependency correctness across all nodes, including:
+#     - Missing dependencies
+#     - Failed dependency chains
+#     - k3s and distccd dependency correctness
+#     - Boot ordering anomalies
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-service-dependency-audit.yml
+#
+# Notes:
+#   - Useful for diagnosing slow boots and service flapping.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show failed dependency chains
+      shell: systemctl list-dependencies --failed 2>/dev/null
+      register: failed
+
+    - name: Show k3s dependency chain
+      shell: systemctl list-dependencies k3s 2>/dev/null
+      register: k3s
+
+    - name: Show distccd dependency chain
+      shell: systemctl list-dependencies distccd 2>/dev/null || true
+      register: distcc
+
+    - name: Display dependency audit
+      debug:
+        msg:
+          - "Failed Chains: {{ failed.stdout }}"
+          - "k3s Chain: {{ k3s.stdout }}"
+          - "distccd Chain: {{ distcc.stdout }}"

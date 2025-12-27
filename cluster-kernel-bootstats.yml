@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-bootstats.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide boot performance report including:
+#     - Kernel boot time
+#     - Systemd boot time
+#     - Slow services
+#     - Boot warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-bootstats.yml
+#
+# Notes:
+#   - Useful for diagnosing slow boots, SD card issues, and kernel regressions.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show kernel boot time
+      shell: dmesg | grep "Kernel command line" -n || true
+      register: kboot
+
+    - name: Show systemd-analyze summary
+      shell: systemd-analyze 2>/dev/null || true
+      register: sysd
+
+    - name: Show slowest services
+      shell: systemd-analyze blame 2>/dev/null | head -n 20
+      register: blame
+
+    - name: Display bootstats report
+      debug:
+        msg:
+          - "Kernel Boot: {{ kboot.stdout }}"
+          - "Systemd: {{ sysd.stdout }}"
+          - "Slow Services: {{ blame.stdout }}"

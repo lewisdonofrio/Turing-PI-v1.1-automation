@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-maintenance
+# =============================================================================
+# Purpose:
+#   Document the long-term maintenance tasks required to keep the cluster
+#   healthy, stable, and ready for distributed kernel builds.
+#
+# Maintenance Tasks:
+#
+#   1. Monthly
+#      - Run cluster-health.yml
+#      - Run cluster-filesystem-integrity.yml
+#      - Run cluster-power-report.yml
+#
+#   2. Quarterly
+#      - Verify distccd versions across nodes
+#      - Rebuild kernel with updated toolchain
+#      - Validate kernel config drift
+#
+#   3. After Every Kernel Deployment
+#      - Run verification pipeline
+#      - Check dmesg for warnings
+#      - Confirm k3s workloads are stable
+#
+#   4. As Needed
+#      - Replace SD cards showing corruption
+#      - Rebalance DISTCC_HOSTS based on performance
+#
+# Notes:
+#   - This file defines the authoritative maintenance schedule.
+# =============================================================================

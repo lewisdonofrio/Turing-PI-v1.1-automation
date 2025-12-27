@@ -1,17 +1,29 @@
 # =============================================================================
 # File: /opt/ansible-k3s-cluster/inventory/hosts
 # =============================================================================
-[build]
-kubenode1
+# Purpose:
+#   Define all cluster nodes using DNS names from the ASUS router.
+#   builder runs playbooks; ansible is the remote automation user.
+# =============================================================================
 
+[k3s_cluster]
+kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode2.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode3.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode4.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode5.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode6.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode7.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+
+[master]
+kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 [workers]
-kubenode1
-kubenode2
-kubenode3
-kubenode4
-kubenode5
-kubenode6
-kubenode7
+kubenode2.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode3.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode4.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode5.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode6.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode7.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 
-[all:vars]
-ansible_user=ansible
+
+

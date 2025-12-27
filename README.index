@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.index
+# =============================================================================
+# Purpose:
+#   Top-level index of all documentation files in the Ansible automation
+#   repository. This file provides a map of operational boundaries and
+#   responsibilities across the cluster.
+#
+# Documentation Map:
+#
+#   1. README.ansible
+#      - Automation repository overview
+#      - Ownership and usage
+#
+#   2. README.ansible-user
+#      - Role and responsibilities of the 'ansible' service account
+#
+#   3. README.builder-user
+#      - Role and responsibilities of the 'builder' service account
+#
+#   4. README.distcc
+#      - Distributed compilation architecture
+#      - distccd configuration and monitoring
+#
+#   5. README.kernel-deploy
+#      - Kernel deployment workflow
+#      - Artifact paths and reboot orchestration
+#
+# Playbooks:
+#   - distcc-prepare.yml
+#   - distcc-verify.yml
+#   - distcc-monitor.yml
+#   - deploy-kernel.yml
+#   - kernel-backup.yml
+#   - kernel-verify.yml
+#   - reboot-cluster.yml
+#
+# Notes:
+#   - All documentation is ASCII-safe and nano-safe.
+#   - All paths are absolute for reproducibility.
+# =============================================================================

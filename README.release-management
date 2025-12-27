@@ -1,0 +1,37 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.release-management
+# =============================================================================
+# Purpose:
+#   Document the release management workflow for kernel updates and cluster
+#   automation changes. This ensures controlled, auditable, and reversible
+#   releases.
+#
+# Release Workflow:
+#
+#   1. Build Phase (builder user)
+#        - Build kernel using distcc
+#        - Validate artifacts
+#
+#   2. Backup Phase (ansible user)
+#        ansible-playbook kernel-backup.yml
+#
+#   3. Deployment Phase
+#        ansible-playbook deploy-kernel.yml
+#
+#   4. Verification Phase
+#        ansible-playbook kernel-verify.yml
+#        ansible-playbook cluster-health.yml
+#        ansible-playbook cluster-kernel-report.yml
+#
+#   5. Rollback Phase (if needed)
+#        ansible-playbook kernel-rollback.yml
+#
+# Versioning:
+#   - Kernel versions should follow semantic or date-based tagging.
+#   - Deployment logs should be stored under:
+#       /opt/ansible-k3s-cluster/logs/
+#
+# Notes:
+#   - This file defines the authoritative release process.
+#   - Ensures safe, repeatable, and auditable kernel rollouts.
+# =============================================================================

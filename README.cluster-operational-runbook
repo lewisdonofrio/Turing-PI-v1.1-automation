@@ -1,0 +1,27 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-operational-runbook
+# =============================================================================
+# Purpose:
+#   Provide the day-to-day operational runbook for the cluster. This defines the
+#   standard operating procedures (SOPs) for routine tasks.
+#
+# Daily Tasks:
+#   - Run cluster-health.yml
+#   - Check distccd status
+#   - Check node temperatures
+#
+# Weekly Tasks:
+#   - Run filesystem integrity checks
+#   - Run network diagnostics
+#
+# Monthly Tasks:
+#   - Validate kernel config drift
+#   - Validate distcc performance
+#
+# Quarterly Tasks:
+#   - Replace aging SD cards
+#   - Review capacity planning
+#
+# Notes:
+#   - This runbook defines the authoritative operational workflow.
+# =============================================================================

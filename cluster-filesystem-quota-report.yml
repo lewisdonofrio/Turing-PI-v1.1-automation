@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-quota-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide filesystem quota report including:
+#     - User and group quotas
+#     - Filesystem usage limits
+#     - Quota warnings
+#     - SD card wear-level indicators (if exposed)
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-filesystem-quota-report.yml
+#
+# Notes:
+#   - Useful for diagnosing SD card exhaustion and runaway workloads.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show quota summary
+      shell: quota -s 2>/dev/null || true
+      register: quota
+
+    - name: Show filesystem usage
+      shell: df -h
+      register: dfout
+
+    - name: Check for quota warnings
+      shell: dmesg | grep -i quota || true
+      register: warn
+
+    - name: Display quota report
+      debug:
+        msg:
+          - "Quota: {{ quota.stdout }}"
+          - "Filesystem: {{ dfout.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

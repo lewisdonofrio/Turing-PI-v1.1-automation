@@ -1,0 +1,29 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-safety-rails
+# =============================================================================
+# Purpose:
+#   Define the safety rails that prevent catastrophic or irreversible actions
+#   within the cluster automation framework.
+#
+# Safety Rails:
+#
+#   1. Immutable Artifacts
+#      - Nodes never modify kernel artifacts
+#
+#   2. Rollback-First Philosophy
+#      - Every deployment must be reversible
+#
+#   3. No Cross-Role Contamination
+#      - Builder never modifies node state
+#      - Nodes never modify build state
+#
+#   4. Verification Required
+#      - No deployment without passing verification pipeline
+#
+#   5. Integrity Enforcement
+#      - wc-based manifest
+#      - Drift detection
+#
+# Notes:
+#   - These rails ensure long-term safety and operational resilience.
+# =============================================================================

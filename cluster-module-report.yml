@@ -1,0 +1,37 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-module-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel module report including:
+#     - Loaded modules
+#     - Module sizes
+#     - Module dependencies
+#     - Module count
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-module-report.yml
+#
+# Notes:
+#   - Useful for verifying k3s-required modules such as overlay and br_netfilter.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: List loaded modules
+      shell: lsmod
+      register: lsmod_out
+
+    - name: Count loaded modules
+      shell: lsmod | wc -l
+      register: mod_count
+
+    - name: Display module report
+      debug:
+        msg:
+          - "Loaded Modules: {{ lsmod_out.stdout }}"
+          - "Module Count: {{ mod_count.stdout }}"

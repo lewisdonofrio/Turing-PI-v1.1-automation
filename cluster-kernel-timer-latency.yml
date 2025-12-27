@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-timer-latency.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel timer latency report including:
+#     - Scheduling latency
+#     - Timer interrupt latency
+#     - Softirq latency
+#     - Latency-related warnings in dmesg
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-kernel-timer-latency.yml
+#
+# Notes:
+#   - Useful for diagnosing jitter, scheduler stalls, and distcc slowdown.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show scheduling latency (schedstat)
+      shell: cat /proc/schedstat 2>/dev/null | head -n 20
+      register: sched
+
+    - name: Show timer interrupt latency (softirq)
+      shell: cat /proc/softirqs 2>/dev/null
+      register: soft
+
+    - name: Check for latency warnings
+      shell: dmesg | grep -i latency || true
+      register: warn
+
+    - name: Display latency report
+      debug:
+        msg:
+          - "Schedstat: {{ sched.stdout }}"
+          - "SoftIRQ: {{ soft.stdout }}"
+          - "Warnings: {{ warn.stdout }}"

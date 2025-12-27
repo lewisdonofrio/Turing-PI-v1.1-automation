@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/distcc-monitor.yml
+# =============================================================================
+# Purpose:
+#   Monitor distccd activity across all cluster nodes. Useful during distributed
+#   kernel builds to confirm job distribution and load.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/distcc-monitor.yml
+#
+# Notes:
+#   - Displays active distccd processes.
+#   - Shows CPU load and distccd logs.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show distccd processes
+      shell: ps aux | grep distccd | grep -v grep
+      register: distccd_ps
+
+    - name: Show CPU load
+      shell: uptime
+      register: load_avg
+
+    - name: Show last 10 lines of distccd log
+      shell: tail -n 10 /var/log/distccd.log || true
+      register: distccd_log
+
+    - name: Display monitoring output
+      debug:
+        msg:
+          - "Processes: {{ distccd_ps.stdout }}"
+          - "Load: {{ load_avg.stdout }}"
+          - "Log: {{ distccd_log.stdout }}"
+

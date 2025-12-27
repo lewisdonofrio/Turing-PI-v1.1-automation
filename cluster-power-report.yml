@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-power-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide power-related report including:
+#     - Power supply warnings
+#     - Throttling state
+#     - Voltage status
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-power-report.yml
+#
+# Notes:
+#   - Useful for diagnosing brownouts, undervoltage, and stability issues.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get throttling and power flags
+      shell: vcgencmd get_throttled || true
+      register: throttle
+
+    - name: Get voltage information
+      shell: vcgencmd measure_volts || true
+      register: volts
+
+    - name: Display power report
+      debug:
+        msg:
+          - "Throttling Flags: {{ throttle.stdout }}"
+          - "Voltage: {{ volts.stdout }}"

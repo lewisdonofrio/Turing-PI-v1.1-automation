@@ -1,0 +1,47 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide network report including:
+#     - IP configuration
+#     - Routing table
+#     - Active network interfaces
+#     - DNS configuration
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-report.yml
+#
+# Notes:
+#   - Useful for diagnosing connectivity issues or validating network layout.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show IP configuration
+      shell: ip addr
+      register: ip_out
+
+    - name: Show routing table
+      shell: ip route
+      register: route_out
+
+    - name: Show DNS configuration
+      shell: cat /etc/resolv.conf
+      register: dns_out
+
+    - name: Show active interfaces
+      shell: ip link
+      register: link_out
+
+    - name: Display network report
+      debug:
+        msg:
+          - "IP: {{ ip_out.stdout }}"
+          - "Routes: {{ route_out.stdout }}"
+          - "DNS: {{ dns_out.stdout }}"
+          - "Interfaces: {{ link_out.stdout }}"

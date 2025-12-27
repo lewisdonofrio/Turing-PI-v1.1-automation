@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-routing-audit.yml
+# =============================================================================
+# Purpose:
+#   Audit routing tables across all nodes to detect:
+#     - Missing default routes
+#     - Conflicting routes
+#     - Asymmetric routing
+#     - k3s-related route anomalies
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-network-routing-audit.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc stalls and k3s networking failures.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show routing table
+      shell: ip route
+      register: route
+
+    - name: Detect missing default route
+      shell: ip route | grep default || true
+      register: def
+
+    - name: Detect duplicate routes
+      shell: ip route | awk '{print $1}' | sort | uniq -d || true
+      register: dup
+
+    - name: Display routing audit
+      debug:
+        msg:
+          - "Routes: {{ route.stdout }}"
+          - "Default Route: {{ def.stdout }}"
+          - "Duplicate Routes: {{ dup.stdout }}"

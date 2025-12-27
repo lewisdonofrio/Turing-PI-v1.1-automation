@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-arpwatch.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide ARP anomaly report including:
+#     - ARP table entries
+#     - Duplicate MAC detection
+#     - Incomplete ARP entries
+#     - Suspicious ARP churn
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-arpwatch.yml
+#
+# Notes:
+#   - Useful for diagnosing network instability, IP conflicts, and distcc stalls.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show ARP table
+      shell: ip neigh
+      register: arp
+
+    - name: Detect incomplete ARP entries
+      shell: ip neigh | grep INCOMPLETE || true
+      register: incomplete
+
+    - name: Detect duplicate MACs
+      shell: ip neigh | awk '{print $5}' | sort | uniq -d || true
+      register: dupmac
+
+    - name: Display ARP anomaly report
+      debug:
+        msg:
+          - "ARP Table: {{ arp.stdout }}"
+          - "Incomplete Entries: {{ incomplete.stdout }}"
+          - "Duplicate MACs: {{ dupmac.stdout }}"

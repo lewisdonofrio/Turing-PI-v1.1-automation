@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-symbols.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide kernel symbol report including:
+#     - Exported kernel symbols
+#     - Missing symbols
+#     - Module symbol dependencies
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-kernel-symbols.yml
+#
+# Notes:
+#   - Useful for diagnosing module load failures and ABI mismatches.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: List exported kernel symbols
+      shell: cat /proc/kallsyms | head -n 200
+      register: symbols
+
+    - name: List unresolved symbols in dmesg
+      shell: dmesg | grep -i "unresolved symbol" || true
+      register: unresolved
+
+    - name: Display kernel symbol report
+      debug:
+        msg:
+          - "Exported Symbols (first 200): {{ symbols.stdout }}"
+          - "Unresolved Symbols: {{ unresolved.stdout }}"

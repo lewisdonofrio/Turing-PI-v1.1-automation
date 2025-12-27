@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-routing.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide routing report including:
+#     - Kernel routing table
+#     - ARP table
+#     - Default gateway status
+#     - Route anomalies
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-routing.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc connectivity issues and k3s networking bugs.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show routing table
+      shell: ip route
+      register: route
+
+    - name: Show ARP table
+      shell: ip neigh
+      register: arp
+
+    - name: Check default gateway reachability
+      shell: ping -c 2 $(ip route | awk '/default/ {print $3}') || true
+      register: gw
+
+    - name: Display routing report
+      debug:
+        msg:
+          - "Routing Table: {{ route.stdout }}"
+          - "ARP Table: {{ arp.stdout }}"
+          - "Gateway Reachability: {{ gw.stdout }}"

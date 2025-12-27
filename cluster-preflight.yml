@@ -1,0 +1,58 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-preflight.yml
+# =============================================================================
+# Purpose:
+#   Perform a full preflight check before any kernel deployment or distributed
+#   build. This validates:
+#     - SSH connectivity
+#     - distccd availability
+#     - Disk space
+#     - Memory availability
+#     - System load
+#     - Required kernel modules
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-preflight.yml
+#
+# Notes:
+#   - This is the recommended first step before any major operation.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check SSH connectivity
+      ping:
+
+    - name: Check distccd port
+      shell: ss -tulpn | grep 3632 || true
+      register: distcc_port
+
+    - name: Check disk space
+      shell: df -h /
+      register: disk
+
+    - name: Check memory
+      shell: free -h
+      register: mem
+
+    - name: Check load average
+      shell: uptime
+      register: load
+
+    - name: Check required kernel modules
+      shell: lsmod | grep -E "overlay|br_netfilter" || true
+      register: modules
+
+    - name: Display preflight summary
+      debug:
+        msg:
+          - "distccd: {{ distcc_port.stdout }}"
+          - "Disk: {{ disk.stdout }}"
+          - "Memory: {{ mem.stdout }}"
+          - "Load: {{ load.stdout }}"
+          - "Modules: {{ modules.stdout }}"

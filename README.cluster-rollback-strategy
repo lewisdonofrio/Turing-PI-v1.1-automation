@@ -1,0 +1,29 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-rollback-strategy
+# =============================================================================
+# Purpose:
+#   Document the authoritative rollback strategy for kernel deployments. This
+#   ensures safe, predictable recovery from failed or unstable kernel releases.
+#
+# Rollback Strategy:
+#
+#   1. Identify Failure
+#      - Review cluster-health.yml
+#      - Check dmesg for kernel errors
+#
+#   2. Select Previous Kernel
+#      - Use backup created by kernel-backup.yml
+#
+#   3. Deploy Previous Kernel
+#      - ansible-playbook kernel-rollback.yml
+#
+#   4. Verify Recovery
+#      - Run verification pipeline
+#      - Confirm k3s workloads are stable
+#
+#   5. Document Incident
+#      - Update kernel-rollback.log
+#
+# Notes:
+#   - Rollback must be fast, safe, and fully automated.
+# =============================================================================

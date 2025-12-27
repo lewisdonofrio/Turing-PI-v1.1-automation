@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-filesystem-integrity.yml
+# =============================================================================
+# Purpose:
+#   Perform a lightweight filesystem integrity check across all nodes. This
+#   includes:
+#     - Checking for read-only mounts
+#     - Checking for filesystem errors in dmesg
+#     - Checking for orphaned modules or boot files
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-filesystem-integrity.yml
+#
+# Notes:
+#   - Helps detect SD card corruption early.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check for read-only mounts
+      shell: mount | grep "(ro," || true
+      register: ro_mounts
+
+    - name: Check dmesg for filesystem errors
+      shell: dmesg | grep -i "ext4\|error\|corrupt" || true
+      register: fs_errors
+
+    - name: Check for orphaned modules
+      shell: find /lib/modules -maxdepth 1 -type d | wc -l
+      register: mod_dirs
+
+    - name: Display filesystem integrity report
+      debug:
+        msg:
+          - "Read-only mounts: {{ ro_mounts.stdout }}"
+          - "Filesystem errors: {{ fs_errors.stdout }}"
+          - "Module directories: {{ mod_dirs.stdout }}"

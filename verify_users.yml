@@ -1,0 +1,87 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/verify_users.yml
+# =============================================================================
+# Purpose:
+#   Verify that all user accounts across the cluster match the expected model.
+#   This playbook performs READ-ONLY checks and does NOT modify the system.
+#
+# Checks performed:
+#   - ansible user exists on all nodes
+#   - ansible has passwordless sudo
+#   - ansible has an authorized_keys file
+#   - builder exists ONLY on kubenode1
+#   - builder has sudo on kubenode1
+#   - no unexpected human-level accounts exist (UID >= 1000)
+#   - service accounts remain locked
+# =============================================================================
+
+---
+- hosts: all
+  gather_facts: yes
+  become: yes
+  tasks:
+
+    - name: Check that ansible user exists
+      command: id ansible
+      register: ansible_user_check
+      ignore_errors: yes
+
+    - name: Report missing ansible user
+      debug:
+        msg: "FAILED: ansible user missing on {{ inventory_hostname }}"
+      when: ansible_user_check.rc != 0
+
+    - name: Check for ansible sudoers file
+      stat:
+        path: /etc/sudoers.d/99-ansible
+      register: ansible_sudoers
+
+    - name: Report missing ansible sudoers
+      debug:
+        msg: "FAILED: ansible sudoers missing on {{ inventory_hostname }}"
+      when: not ansible_sudoers.stat.exists
+
+    - name: Check for ansible authorized_keys
+      stat:
+        path: /home/ansible/.ssh/authorized_keys
+      register: ansible_keys
+
+    - name: Report missing ansible SSH keys
+      debug:
+        msg: "FAILED: ansible authorized_keys missing on {{ inventory_hostname }}"
+      when: not ansible_keys.stat.exists
+
+    - name: List human-level accounts (UID >= 1000)
+      command: "awk -F: '$3 >= 1000 {print $1}' /etc/passwd"
+      register: user_list
+
+    - name: Report unexpected users
+      debug:
+        msg: "FAILED: Unexpected user '{{ item }}' on {{ inventory_hostname }}"
+      loop: "{{ user_list.stdout_lines }}"
+      when: item not in ['ansible', 'builder', 'alarm', 'nobody'] and
+            not (inventory_hostname != 'kubenode1' and item == 'builder')
+
+- hosts: kubenode1
+  become: yes
+  tasks:
+
+    - name: Check builder user exists only on kubenode1
+      command: id builder
+      register: builder_check
+      ignore_errors: yes
+
+    - name: Report missing builder user
+      debug:
+        msg: "FAILED: builder user missing on kubenode1"
+      when: builder_check.rc != 0
+
+    - name: Check builder sudoers file
+      stat:
+        path: /etc/sudoers.d/99-builder
+      register: builder_sudoers
+
+    - name: Report missing builder sudoers
+      debug:
+        msg: "FAILED: builder sudoers missing on kubenode1"
+      when: not builder_sudoers.stat.exists

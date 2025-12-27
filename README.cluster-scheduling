@@ -1,0 +1,28 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-scheduling
+# =============================================================================
+# Purpose:
+#   Document scheduling considerations for distributed kernel builds and k3s
+#   workloads. This ensures the cluster remains responsive during heavy builds.
+#
+# Scheduling Guidelines:
+#
+#   1. Build Scheduling
+#      - Run distributed builds during low-load periods
+#      - Avoid builds during k3s workload spikes
+#
+#   2. Node Load Management
+#      - Monitor load with cluster-health.yml
+#      - Adjust DISTCC_HOSTS if nodes are overloaded
+#
+#   3. k3s Scheduling
+#      - Ensure CPU/memory reservations for system workloads
+#      - Avoid starving distccd processes
+#
+#   4. Thermal Scheduling
+#      - Avoid builds during high ambient temperatures
+#      - Monitor with cluster-temp-report.yml
+#
+# Notes:
+#   - Proper scheduling prevents cluster slowdowns and build failures.
+# =============================================================================

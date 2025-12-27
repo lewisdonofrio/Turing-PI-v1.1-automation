@@ -1,0 +1,32 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-workflow-index
+# =============================================================================
+# Purpose:
+#   Provide a complete index of all operational workflows in the cluster,
+#   linking diagnostics, build steps, deployment steps, and recovery steps.
+#
+# Workflow Categories:
+#
+#   1. Build Workflows
+#      - Prechecks
+#      - Build lifecycle
+#      - Postchecks
+#      - Promotion
+#
+#   2. Deployment Workflows
+#      - Kernel rollout
+#      - Rollback
+#      - Node-by-node update
+#
+#   3. Diagnostics Workflows
+#      - Kernel reports
+#      - Network reports
+#      - Filesystem reports
+#
+#   4. Recovery Workflows
+#      - Incident response
+#      - Rollback-first strategy
+#
+# Notes:
+#   - This file is the authoritative workflow map for the entire system.
+# =============================================================================

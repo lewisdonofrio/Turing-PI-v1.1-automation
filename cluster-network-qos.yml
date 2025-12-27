@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-network-qos.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide QoS (Quality of Service) report including:
+#     - Traffic shaping rules
+#     - tc qdisc configuration
+#     - Bandwidth limits
+#     - Packet prioritization
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-network-qos.yml
+#
+# Notes:
+#   - Useful for diagnosing distcc performance issues and k3s network latency.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Show qdisc configuration
+      shell: tc qdisc show 2>/dev/null
+      register: qdisc
+
+    - name: Show traffic classes
+      shell: tc class show 2>/dev/null
+      register: classes
+
+    - name: Show filters
+      shell: tc filter show 2>/dev/null
+      register: filters
+
+    - name: Display QoS report
+      debug:
+        msg:
+          - "QDisc: {{ qdisc.stdout }}"
+          - "Classes: {{ classes.stdout }}"
+          - "Filters: {{ filters.stdout }}"

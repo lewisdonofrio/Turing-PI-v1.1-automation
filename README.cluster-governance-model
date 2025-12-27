@@ -1,0 +1,30 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.cluster-governance-model
+# =============================================================================
+# Purpose:
+#   Define the governance model for the cluster automation framework. This
+#   ensures consistent decision-making, safe operations, and clear authority.
+#
+# Governance Components:
+#
+#   1. Roles & Responsibilities
+#      - Builder: kernel creation
+#      - Ansible: deployment & diagnostics
+#      - Nodes: execution & reporting
+#
+#   2. Change Control
+#      - Kernel changes require verification + audit log
+#      - Deployment requires preflight checks
+#
+#   3. Risk Management
+#      - Rollback-first philosophy
+#      - Immutable artifacts
+#
+#   4. Documentation Standards
+#      - ASCII-safe
+#      - nano-safe
+#      - Fully reproducible
+#
+# Notes:
+#   - This file defines the authoritative governance model.
+# =============================================================================

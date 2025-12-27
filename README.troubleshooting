@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.troubleshooting
+# =============================================================================
+# Purpose:
+#   Provide a troubleshooting reference for common issues encountered during
+#   cluster automation, kernel deployment, and distributed builds.
+#
+# Common Issues:
+#
+#   1. SSH Failures
+#      - Ensure ansible user has correct private key.
+#      - Ensure known_hosts contains FQDN entries.
+#
+#   2. distcc Not Distributing Jobs
+#      - Verify distccd is running on all nodes.
+#      - Check DISTCC_HOSTS on builder.
+#      - Run distcc-status.yml.
+#
+#   3. Kernel Deployment Fails
+#      - Ensure kernel artifacts exist on builder.
+#      - Run kernel-backup.yml before deployment.
+#      - Verify /boot and /lib/modules permissions.
+#
+#   4. Node Fails to Boot After Kernel Update
+#      - Use kernel-rollback.yml.
+#      - Inspect /var/backups/kernel-<timestamp>.
+#
+#   5. k3s Not Starting
+#      - Verify required kernel modules exist.
+#      - Confirm overlayfs and br_netfilter are built-in.
+#
+# Notes:
+#   - All troubleshooting steps assume operations are run as 'ansible'.
+#   - All paths are absolute for reproducibility.
+# =============================================================================

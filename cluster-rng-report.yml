@@ -1,0 +1,48 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-rng-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide random number generator (RNG) health report,
+#   including:
+#     - Available entropy
+#     - Hardware RNG presence
+#     - Kernel RNG warnings
+#     - rngd service status (if installed)
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-rng-report.yml
+#
+# Notes:
+#   - Useful for diagnosing slow crypto, TLS stalls, or k3s startup delays.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Check available entropy
+      shell: cat /proc/sys/kernel/random/entropy_avail
+      register: entropy
+
+    - name: Check for hardware RNG
+      shell: ls /dev/hwrng 2>/dev/null || true
+      register: hwrng
+
+    - name: Check RNG warnings in dmesg
+      shell: dmesg | grep -i rng || true
+      register: rng_warn
+
+    - name: Check rngd service status
+      shell: systemctl status rngd 2>/dev/null || true
+      register: rngd
+
+    - name: Display RNG report
+      debug:
+        msg:
+          - "Entropy: {{ entropy.stdout }}"
+          - "Hardware RNG: {{ hwrng.stdout }}"
+          - "RNG Warnings: {{ rng_warn.stdout }}"
+          - "rngd Status: {{ rngd.stdout }}"

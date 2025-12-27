@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-uptime-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide uptime report including:
+#     - System uptime
+#     - Last boot time
+#     - Load averages
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-uptime-report.yml
+#
+# Notes:
+#   - Useful for identifying nodes that recently rebooted.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get uptime
+      shell: uptime
+      register: uptime_out
+
+    - name: Get last boot time
+      shell: who -b
+      register: boot_out
+
+    - name: Display uptime report
+      debug:
+        msg:
+          - "Uptime: {{ uptime_out.stdout }}"
+          - "Last Boot: {{ boot_out.stdout }}"

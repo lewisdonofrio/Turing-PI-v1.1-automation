@@ -1,0 +1,28 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.audit-log
+# =============================================================================
+# Purpose:
+#   Define how kernel deployments, rollbacks, and major automation events are
+#   recorded for audit and traceability.
+#
+# Audit Log Location:
+#   /opt/ansible-k3s-cluster/logs/
+#
+# Recommended Log Files:
+#   - kernel-deploy.log
+#   - kernel-rollback.log
+#   - distcc-events.log
+#   - cluster-health.log
+#
+# Recommended Content Format:
+#
+#   [YYYY-MM-DD HH:MM:SS] USER=<user> ACTION=<action> DETAILS=<details>
+#
+# Example:
+#   [2025-12-27 03:10:00] USER=ansible ACTION=kernel-deploy DETAILS=version=6.6.12-custom-k3s
+#
+# Notes:
+#   - Logs should be append-only.
+#   - Logs provide a narrative of cluster changes over time.
+#   - Future automation can write to these logs explicitly.
+# =============================================================================

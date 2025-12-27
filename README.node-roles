@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/README.node-roles
+# =============================================================================
+# Purpose:
+#   Document the functional roles of each node in the k3s cluster. This file
+#   defines responsibilities, workloads, and operational expectations.
+#
+# Node Roles:
+#
+#   kubenode1:
+#     - Builder node
+#     - distcc client
+#     - Kernel compilation host
+#     - Not a k3s worker
+#
+#   kubenode2–kubenode7:
+#     - distccd servers
+#     - k3s worker nodes
+#     - Participate in distributed kernel builds
+#
+# Responsibilities:
+#   - Builder:
+#       Compiles kernels, manages source tree, initiates distcc builds.
+#
+#   - Worker Nodes:
+#       Run k3s workloads, accept distcc jobs, maintain kernel modules.
+#
+# Notes:
+#   - This file provides clarity for future maintainers.
+#   - Ensures consistent understanding of cluster responsibilities.
+# =============================================================================

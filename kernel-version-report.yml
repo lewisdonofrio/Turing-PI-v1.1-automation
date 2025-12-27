@@ -1,0 +1,42 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/kernel-version-report.yml
+# =============================================================================
+# Purpose:
+#   Generate a cluster-wide report of kernel versions, module versions, and
+#   bootloader timestamps. Useful after deployment or during audits.
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/kernel-version-report.yml
+#
+# Notes:
+#   - Produces a clean, readable summary for each node.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+    - name: Get running kernel version
+      command: uname -r
+      register: uname_out
+
+    - name: Get module directory timestamp
+      stat:
+        path: "/lib/modules/{{ uname_out.stdout }}"
+      register: modules_stat
+
+    - name: Get boot partition timestamp
+      stat:
+        path: /boot/zImage
+      register: zimage_stat
+
+    - name: Display kernel version report
+      debug:
+        msg:
+          - "Node: {{ inventory_hostname }}"
+          - "Kernel: {{ uname_out.stdout }}"
+          - "Modules timestamp: {{ modules_stat.stat.mtime }}"
+          - "zImage timestamp: {{ zimage_stat.stat.mtime }}"
