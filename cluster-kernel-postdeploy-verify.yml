@@ -1,0 +1,73 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-postdeploy-verify.yml
+# =============================================================================
+# Purpose:
+#   Verify that all nodes are running the expected kernel version and that
+#   critical services are healthy after deployment or rollback.
+#
+# Workflow:
+#   1. Verify uname -r matches expected version
+#   2. Verify /lib/modules/<version> exists
+#   3. Verify k3s is active
+#   4. Verify distccd is active
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     -e "expected_version=20250101-120000" \
+#     cluster-kernel-postdeploy-verify.yml
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+  gather_facts: no
+
+  vars:
+    expected_version: "{{ expected_version | default('UNSET', true) }}"
+
+  pre_tasks:
+    - name: Fail if expected_version is not set
+      fail:
+        msg: "expected_version must be provided via -e expected_version=..."
+      when: expected_version == "UNSET"
+
+  tasks:
+    - name: Get running kernel version
+      shell: uname -r
+      register: uname_out
+
+    - name: Report running kernel version
+      debug:
+        msg: "Running kernel: {{ uname_out.stdout }} (expected: {{ expected_version }})"
+
+    - name: Fail if running kernel does not match expected version
+      fail:
+        msg: "Kernel version mismatch on {{ inventory_hostname }}: got {{ uname_out.stdout }}, expected {{ expected_version }}"
+      when: uname_out.stdout != expected_version
+
+    - name: Verify modules directory exists
+      stat:
+        path: "/lib/modules/{{ expected_version }}"
+      register: modules_stat
+
+    - name: Fail if modules directory missing
+      fail:
+        msg: "Modules for {{ expected_version }} missing on {{ inventory_hostname }}"
+      when: not modules_stat.stat.exists
+
+    - name: Check k3s service status
+      shell: systemctl is-active k3s || true
+      register: k3s_status
+
+    - name: Report k3s service status
+      debug:
+        msg: "k3s status on {{ inventory_hostname }}: {{ k3s_status.stdout }}"
+
+    - name: Check distccd service status
+      shell: systemctl is-active distccd || true
+      register: distccd_status
+
+    - name: Report distccd service status
+      debug:
+        msg: "distccd status on {{ inventory_hostname }}: {{ distccd_status.stdout }}"

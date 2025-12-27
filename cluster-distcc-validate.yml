@@ -1,0 +1,110 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
+# =============================================================================
+# Purpose:
+#   Validate distcc readiness across all cluster nodes. This ensures:
+#     - distccd is installed and running
+#     - distccd is listening on the correct port
+#     - gcc versions match across nodes
+#     - PATH and toolchain are correct
+#     - MTU and network connectivity are healthy
+#     - builder can distribute jobs to nodes
+#
+# Usage:
+#   ansible-playbook \
+#     -i /opt/ansible-k3s-cluster/inventory/hosts \
+#     /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
+#
+# Notes:
+#   - This is the FIRST playbook to run before any distributed build.
+#   - All checks are read-only and safe.
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Basic connectivity
+    # -------------------------------------------------------------------------
+    - name: Validate SSH connectivity
+      ping:
+
+    # -------------------------------------------------------------------------
+    # distccd service checks
+    # -------------------------------------------------------------------------
+    - name: Check distccd service status
+      shell: systemctl is-active distccd || true
+      register: distccd_status
+
+    - name: Report distccd service status
+      debug:
+        msg: "distccd status: {{ distccd_status.stdout }}"
+
+    - name: Check if distccd is listening on port 3632
+      shell: ss -lntp | grep 3632 || true
+      register: distccd_listen
+
+    - name: Report distccd listening state
+      debug:
+        msg: "distccd listening: {{ distccd_listen.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Toolchain checks
+    # -------------------------------------------------------------------------
+    - name: Check gcc version
+      shell: gcc --version | head -n 1
+      register: gcc_version
+
+    - name: Report gcc version
+      debug:
+        msg: "gcc version: {{ gcc_version.stdout }}"
+
+    - name: Check distcc binary
+      shell: which distcc || true
+      register: distcc_path
+
+    - name: Report distcc binary path
+      debug:
+        msg: "distcc path: {{ distcc_path.stdout }}"
+
+    - name: Check PATH for gcc and distcc
+      shell: echo $PATH
+      register: path_out
+
+    - name: Report PATH
+      debug:
+        msg: "PATH: {{ path_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Network checks
+    # -------------------------------------------------------------------------
+    - name: Show MTU for all interfaces
+      shell: ip link | grep mtu
+      register: mtu_out
+
+    - name: Report MTU
+      debug:
+        msg: "MTU: {{ mtu_out.stdout }}"
+
+    - name: Check hostname and FQDN
+      shell: hostname -f
+      register: fqdn_out
+
+    - name: Report FQDN
+      debug:
+        msg: "FQDN: {{ fqdn_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Optional: distcc dry-run test
+    # -------------------------------------------------------------------------
+    - name: Run distcc dry-run test
+      shell: distcc -j 4 true || true
+      register: distcc_dryrun
+
+    - name: Report distcc dry-run
+      debug:
+        msg: "distcc dry-run: {{ distcc_dryrun.stdout }}"

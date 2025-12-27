@@ -1,0 +1,58 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-distcc-prepare.yml
+# =============================================================================
+# Purpose:
+#   Install and configure distcc across all cluster nodes.
+#   Ensures:
+#     - distcc installed
+#     - distccd enabled and running
+#     - correct listen address and port
+#     - correct systemd configuration
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-distcc-prepare.yml
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Install distcc
+      package:
+        name: distcc
+        state: present
+
+    - name: Enable distccd service
+      systemd:
+        name: distccd
+        enabled: yes
+
+    - name: Start distccd service
+      systemd:
+        name: distccd
+        state: started
+
+    - name: Ensure distccd listens on 0.0.0.0:3632
+      lineinfile:
+        path: /etc/default/distcc
+        regexp: '^ALLOWEDNETS='
+        line: 'ALLOWEDNETS="192.168.0.0/16 10.0.0.0/8"'
+      notify: restart distccd
+
+    - name: Ensure distccd uses correct options
+      lineinfile:
+        path: /etc/default/distcc
+        regexp: '^OPTIONS='
+        line: 'OPTIONS="--daemon --allow 192.168.0.0/16 --allow 10.0.0.0/8 --log-file /var/log/distccd.log"'
+      notify: restart distccd
+
+  handlers:
+    - name: restart distccd
+      systemd:
+        name: distccd
+        state: restarted

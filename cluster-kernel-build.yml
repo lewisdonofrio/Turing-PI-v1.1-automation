@@ -1,0 +1,165 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-build.yml
+# =============================================================================
+# Purpose:
+#   Perform a distributed kernel build using distcc across the cluster.
+#   This runs ONLY on the builder node, but uses the cluster for compilation.
+#
+# Workflow:
+#   1. Validate builder environment
+#   2. Validate distcc environment (binaries + DISTCC_HOSTS)
+#   3. Clean kernel tree
+#   4. Validate .config
+#   5. Run distributed build (with distcc wrappers via task-local PATH)
+#   6. Verify artifacts
+#   7. Archive artifacts
+#   8. Generate audit log
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     --limit builder \
+#     cluster-kernel-build.yml
+#
+# Notes:
+#   - This playbook DOES NOT depend on /etc/environment PATH overrides.
+#   - DISTCC_HOSTS must still be defined somewhere the build shell can see.
+#     (e.g., /etc/environment, or a profile file, or exported in the service.)
+#   - The distcc wrapper directory (/usr/lib/distcc/bin) is injected ONLY for
+#     the build step via the "environment:" block.
+#   - This keeps the system login environment safe and untouched.
+# =============================================================================
+
+---
+- hosts: builder
+  become: yes
+  gather_facts: no
+
+  vars:
+    kernel_src: "/home/builder/linux-rpi-k3s/kernel"
+    artifacts_dir: "/home/builder/linux-rpi-k3s/artifacts"
+    audit_dir: "/home/builder/linux-rpi-k3s/audit"
+    version_tag: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Environment validation
+    # -------------------------------------------------------------------------
+
+    - name: Validate gcc exists
+      shell: which gcc
+      register: gcc_path
+      failed_when: gcc_path.stdout == ""
+      changed_when: false
+
+    - name: Validate distcc exists
+      shell: which distcc
+      register: distcc_path
+      failed_when: distcc_path.stdout == ""
+      changed_when: false
+
+    - name: Validate DISTCC_HOSTS is set
+      shell: echo $DISTCC_HOSTS
+      register: distcc_hosts
+      failed_when: distcc_hosts.stdout == ""
+      changed_when: false
+
+    - name: Validate distcc wrapper directory exists
+      stat:
+        path: "/usr/lib/distcc/bin"
+      register: distcc_wrapper_dir
+      failed_when: not distcc_wrapper_dir.stat.exists
+      changed_when: false
+
+    # -------------------------------------------------------------------------
+    # Kernel tree preparation
+    # -------------------------------------------------------------------------
+
+    - name: Clean kernel tree
+      shell: make mrproper
+      args:
+        chdir: "{{ kernel_src }}"
+
+    - name: Validate .config exists
+      stat:
+        path: "{{ kernel_src }}/.config"
+      register: config_stat
+      failed_when: not config_stat.stat.exists
+
+    - name: Refresh config
+      shell: make olddefconfig
+      args:
+        chdir: "{{ kernel_src }}"
+
+    # -------------------------------------------------------------------------
+    # Distributed build (PATH override is scoped to this task only)
+    # -------------------------------------------------------------------------
+
+    - name: Run distributed kernel build with distcc wrappers
+      shell: make -j32 CC="distcc gcc"
+      args:
+        chdir: "{{ kernel_src }}"
+      environment:
+        PATH: "/usr/lib/distcc/bin:{{ ansible_env.PATH }}"
+      register: build_output
+
+    - name: Show build output (last 20 lines)
+      debug:
+        msg: "{{ build_output.stdout_lines[-20:] }}"
+
+    # -------------------------------------------------------------------------
+    # Artifact verification
+    # -------------------------------------------------------------------------
+
+    - name: Verify zImage exists
+      stat:
+        path: "{{ kernel_src }}/arch/arm/boot/zImage"
+      register: zimage_stat
+      failed_when: not zimage_stat.stat.exists
+
+    - name: Verify modules directory exists
+      stat:
+        path: "{{ kernel_src }}/modules"
+      register: modules_stat
+      failed_when: not modules_stat.stat.exists
+
+    # -------------------------------------------------------------------------
+    # Artifact archiving
+    # -------------------------------------------------------------------------
+
+    - name: Create artifact directory
+      file:
+        path: "{{ artifacts_dir }}/{{ version_tag }}"
+        state: directory
+
+    - name: Archive zImage
+      copy:
+        src: "{{ kernel_src }}/arch/arm/boot/zImage"
+        dest: "{{ artifacts_dir }}/{{ version_tag }}/zImage"
+
+    - name: Archive modules
+      shell: |
+        cp -r "{{ kernel_src }}/modules" "{{ artifacts_dir }}/{{ version_tag }}/modules"
+
+    # -------------------------------------------------------------------------
+    # Audit log
+    # -------------------------------------------------------------------------
+
+    - name: Create audit directory
+      file:
+        path: "{{ audit_dir }}"
+        state: directory
+
+    - name: Write audit log
+      copy:
+        dest: "{{ audit_dir }}/{{ version_tag }}.log"
+        content: |
+          Build Version: {{ version_tag }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          DISTCC_HOSTS: {{ distcc_hosts.stdout }}
+          GCC Path: {{ gcc_path.stdout }}
+          Distcc Path: {{ distcc_path.stdout }}
+          Distcc Wrapper Directory: /usr/lib/distcc/bin
+          Build Output (last 20 lines):
+          {{ build_output.stdout_lines[-20:] | join('\n') }}

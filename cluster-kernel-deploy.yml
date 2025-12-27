@@ -1,0 +1,102 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-deploy.yml
+# =============================================================================
+# Purpose:
+#   Deploy a built kernel version from the builder to all cluster nodes.
+#
+# Workflow:
+#   1. Pull artifacts from builder (zImage + modules)
+#   2. Backup existing kernel and modules
+#   3. Install new kernel and modules
+#   4. Update symlinks
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     -e "kernel_version=20250101-120000" \
+#     cluster-kernel-deploy.yml
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+  gather_facts: yes
+
+  vars:
+    builder_host: "builder"
+    builder_artifacts_root: "/home/builder/linux-rpi-k3s/artifacts"
+    kernel_version: "{{ kernel_version | default('UNSET', true) }}"
+
+  pre_tasks:
+    - name: Fail if kernel_version is not set
+      fail:
+        msg: "kernel_version must be provided via -e kernel_version=..."
+      when: kernel_version == "UNSET"
+
+  tasks:
+    - name: Ensure backup directories exist
+      file:
+        path: "/boot/backup-kernels"
+        state: directory
+
+    - name: Ensure modules backup directory exists
+      file:
+        path: "/lib/modules-backup"
+        state: directory
+
+    - name: Backup current zImage if present
+      shell: |
+        if [ -f /boot/zImage ]; then
+          ts="$(date +%Y%m%d-%H%M%S)"
+          cp /boot/zImage /boot/backup-kernels/zImage-${ts}
+        fi
+      args:
+        warn: false
+
+    - name: Backup current modules for this node
+      shell: |
+        uname_r="$(uname -r)"
+        if [ -d "/lib/modules/${uname_r}" ]; then
+          ts="$(date +%Y%m%d-%H%M%S)"
+          cp -a "/lib/modules/${uname_r}" "/lib/modules-backup/${uname_r}-${ts}"
+        fi
+      args:
+        warn: false
+
+    - name: Fetch new zImage from builder
+      fetch:
+        src: "{{ builder_artifacts_root }}/{{ kernel_version }}/zImage"
+        dest: "/tmp/zImage-{{ kernel_version }}"
+        flat: yes
+        validate_checksum: no
+      delegate_to: "{{ builder_host }}"
+
+    - name: Fetch new modules from builder
+      fetch:
+        src: "{{ builder_artifacts_root }}/{{ kernel_version }}/modules"
+        dest: "/tmp/modules-{{ kernel_version }}"
+        flat: yes
+      delegate_to: "{{ builder_host }}"
+
+    - name: Install new zImage
+      copy:
+        src: "/tmp/zImage-{{ kernel_version }}"
+        dest: "/boot/zImage-{{ kernel_version }}"
+        mode: "0644"
+
+    - name: Update /boot/zImage symlink
+      file:
+        src: "zImage-{{ kernel_version }}"
+        dest: "/boot/zImage"
+        state: link
+
+    - name: Install new modules
+      shell: |
+        rm -rf "/lib/modules/{{ kernel_version }}"
+        cp -a "/tmp/modules-{{ kernel_version }}" "/lib/modules/{{ kernel_version }}"
+      args:
+        warn: false
+
+    - name: Report deployment completion
+      debug:
+        msg: "Kernel {{ kernel_version }} deployed on {{ inventory_hostname }}"

@@ -1,0 +1,36 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-distcc-reset.yml
+# =============================================================================
+# Purpose:
+#   Reset distcc across all nodes:
+#     - Clear logs
+#     - Restart service
+#     - Validate socket
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     cluster-distcc-reset.yml
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+
+  tasks:
+
+    - name: Clear distccd logs
+      shell: truncate -s 0 /var/log/distccd.log || true
+
+    - name: Restart distccd
+      systemd:
+        name: distccd
+        state: restarted
+
+    - name: Confirm distccd is listening
+      shell: ss -lntp | grep 3632 || true
+      register: listen
+
+    - name: Report listening state
+      debug:
+        msg: "distccd listening: {{ listen.stdout }}"

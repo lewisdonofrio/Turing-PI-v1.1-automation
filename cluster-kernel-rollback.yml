@@ -1,0 +1,62 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-kernel-rollback.yml
+# =============================================================================
+# Purpose:
+#   Roll back to a previously-installed kernel version on all nodes.
+#
+# Workflow:
+#   1. Select target rollback version
+#   2. Point /boot/zImage symlink to that version
+#   3. Ensure /lib/modules/<version> exists
+#
+# Usage:
+#   ansible-playbook \
+#     -i inventory/hosts \
+#     -e "rollback_version=20250101-120000" \
+#     cluster-kernel-rollback.yml
+# =============================================================================
+
+---
+- hosts: k3s_cluster
+  become: yes
+  gather_facts: yes
+
+  vars:
+    rollback_version: "{{ rollback_version | default('UNSET', true) }}"
+
+  pre_tasks:
+    - name: Fail if rollback_version is not set
+      fail:
+        msg: "rollback_version must be provided via -e rollback_version=..."
+      when: rollback_version == "UNSET"
+
+  tasks:
+    - name: Check target zImage exists
+      stat:
+        path: "/boot/zImage-{{ rollback_version }}"
+      register: zimage_stat
+
+    - name: Fail if target zImage is missing
+      fail:
+        msg: "Target /boot/zImage-{{ rollback_version }} does not exist on {{ inventory_hostname }}"
+      when: not zimage_stat.stat.exists
+
+    - name: Check target modules directory exists
+      stat:
+        path: "/lib/modules/{{ rollback_version }}"
+      register: modules_stat
+
+    - name: Fail if target modules directory is missing
+      fail:
+        msg: "Target /lib/modules/{{ rollback_version }} does not exist on {{ inventory_hostname }}"
+      when: not modules_stat.stat.exists
+
+    - name: Update /boot/zImage symlink to rollback version
+      file:
+        src: "zImage-{{ rollback_version }}"
+        dest: "/boot/zImage"
+        state: link
+
+    - name: Report rollback completion
+      debug:
+        msg: "Rolled back kernel to version {{ rollback_version }} on {{ inventory_hostname }}"

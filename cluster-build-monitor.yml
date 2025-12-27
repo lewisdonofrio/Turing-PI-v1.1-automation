@@ -1,0 +1,96 @@
+---
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/cluster-build-monitor.yml
+# Description: Cluster-wide real-time monitoring for distributed builds.
+#              Shows CPU load, memory usage, distccd status, distcc job activity,
+#              network throughput, uptime, and temperature.
+# Usage: Run with:
+#        watch -n 60 ansible-playbook -i inventory/hosts.ini cluster-build-monitor.yml
+# =============================================================================
+
+- name: Cluster Build Monitor
+  hosts: k3s_cluster
+  gather_facts: false
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # CPU Load
+    # -------------------------------------------------------------------------
+    - name: Get CPU load
+      command: cat /proc/loadavg
+      register: loadavg
+
+    - name: Report CPU load
+      debug:
+        msg: "CPU Load: {{ loadavg.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Memory Usage
+    # -------------------------------------------------------------------------
+    - name: Get memory usage
+      command: free -h
+      register: mem
+
+    - name: Report memory usage
+      debug:
+        msg: "{{ mem.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # distccd Service Status
+    # -------------------------------------------------------------------------
+    - name: Check distccd service
+      command: systemctl is-active distccd
+      register: distccd_status
+      ignore_errors: true
+
+    - name: Report distccd status
+      debug:
+        msg: "distccd: {{ distccd_status.stdout | default('unknown') }}"
+
+    # -------------------------------------------------------------------------
+    # distcc Job Activity
+    # -------------------------------------------------------------------------
+    - name: Check active distcc jobs
+      command: pgrep -a distcc
+      register: distcc_jobs
+      ignore_errors: true
+
+    - name: Report distcc job activity
+      debug:
+        msg: "distcc jobs: {{ distcc_jobs.stdout | default('none') }}"
+
+    # -------------------------------------------------------------------------
+    # Network Throughput
+    # -------------------------------------------------------------------------
+    - name: Get network stats
+      command: cat /proc/net/dev
+      register: netdev
+
+    - name: Report network stats
+      debug:
+        msg: "{{ netdev.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Uptime
+    # -------------------------------------------------------------------------
+    - name: Get uptime
+      command: uptime
+      register: uptime_out
+
+    - name: Report uptime
+      debug:
+        msg: "{{ uptime_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Temperature (if supported)
+    # -------------------------------------------------------------------------
+    - name: Get temperature
+      command: cat /sys/class/thermal/thermal_zone0/temp
+      register: temp
+      ignore_errors: true
+
+    - name: Report temperature
+      debug:
+        msg: "Temp: {{ (temp.stdout | int / 1000) | round(1) }} C"
+      when: temp.stdout is defined

@@ -25,5 +25,8 @@ kubenode5.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansib
 kubenode6.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 kubenode7.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 
+[builder]
+kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+
 
 
