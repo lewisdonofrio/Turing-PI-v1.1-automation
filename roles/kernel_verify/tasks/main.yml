@@ -1,0 +1,39 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_verify/tasks/main.yml
+# =============================================================================
+- name: Check kernel version on node
+  command: uname -r
+  register: uname_out
+  tags: [builder_mode, verify_kernel]
+
+- name: Show kernel version on node
+  debug:
+    msg: "Kernel on {{ inventory_hostname }}: {{ uname_out.stdout }}"
+  tags: [builder_mode, verify_kernel]
+
+- name: Check required netfilter modules exist
+  shell: |
+    set -e
+    base="/lib/modules/$(uname -r)/kernel"
+    ls "$base/net/ipv4/netfilter" || true
+  register: module_ls
+  tags: [builder_mode, verify_kernel]
+
+- name: Show module listing
+  debug:
+    var: module_ls.stdout_lines
+  tags: [builder_mode, verify_kernel]
+
+- name: Try loading key modules
+  shell: |
+    modprobe nf_nat_ipv4 || true
+    modprobe iptable_nat || true
+    modprobe xt_comment || true
+  become: true
+  register: modprobe_out
+  tags: [builder_mode, verify_kernel]
+
+- name: Show modprobe result
+  debug:
+    var: modprobe_out.stdout_lines
+  tags: [builder_mode, verify_kernel]

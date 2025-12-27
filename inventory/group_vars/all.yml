@@ -1,0 +1,16 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/inventory/group_vars/all.yml
+# =============================================================================
+distcc_network_cidr: "192.168.1.0/24"
+
+kernel_pkg_name: "linux-rpi"
+
+# Real git repo lives only on kubenode1
+kernel_repo_root: "/home/builder/linux-rpi-k3s"
+kernel_pkg_subdir: "PKGBUILDs/core/linux-rpi"
+
+# Tmpfs build root on each node
+kernel_tmpfs_root: "/home/builder/buildtmp"
+
+# Where built packages will be staged on the control machine (kubenode1)
+kernel_pkg_staging: "/opt/ansible-k3s-cluster/artifacts"

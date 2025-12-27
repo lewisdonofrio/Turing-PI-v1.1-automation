@@ -1,0 +1,4 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/inventory/group_vars/workers.yml
+# =============================================================================
+distcc_allowed_subnet: "{{ distcc_network_cidr }}"

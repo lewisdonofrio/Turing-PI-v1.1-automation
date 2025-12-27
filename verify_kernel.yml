@@ -1,0 +1,15 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/verify_kernel.yml
+# =============================================================================
+- name: Verify kernel build state on build host
+  hosts: build
+  gather_facts: false
+  roles:
+    - { role: kernel_build, tags: ["verify_kernel"] }
+    - { role: kernel_collect, tags: ["verify_kernel"] }
+
+- name: Verify kernel and modules on all nodes
+  hosts: workers
+  gather_facts: false
+  roles:
+    - { role: kernel_verify, tags: ["verify_kernel"] }

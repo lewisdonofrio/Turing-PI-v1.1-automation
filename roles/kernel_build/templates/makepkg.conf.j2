@@ -1,0 +1,13 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_build/templates/makepkg.conf.j2
+# =============================================================================
+CARCH="armv7h"
+CHOST="armv7l-unknown-linux-gnueabihf"
+
+BUILDENV=(distcc color !ccache check !sign)
+
+MAKEFLAGS="-j{{ distcc_total_jobs }}"
+
+PACKAGER="k3s-kernel-builder <noreply@example.com>"
+
+PATH="/usr/lib/distcc/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"

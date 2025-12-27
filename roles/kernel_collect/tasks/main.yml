@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_collect/tasks/main.yml
+# =============================================================================
+- name: Find built kernel package on kubenode1
+  find:
+    paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+    patterns: "{{ kernel_pkg_name }}-*.pkg.tar.zst"
+    file_type: file
+  register: kernel_pkgs
+  when: inventory_hostname == "kubenode1"
+  tags: [builder_mode, verify_kernel]
+
+- name: Ensure local staging directory exists on control machine
+  local_action:
+    module: file
+    path: "{{ kernel_pkg_staging }}"
+    state: directory
+    mode: "0755"
+  run_once: true
+  tags: [builder_mode, verify_kernel]
+
+- name: Fetch built kernel package from kubenode1 to control machine
+  fetch:
+    src: "{{ item.path }}"
+    dest: "{{ kernel_pkg_staging }}/"
+    flat: yes
+  loop: "{{ kernel_pkgs.files | default([]) }}"
+  when:
+    - inventory_hostname == "kubenode1"
+    - kernel_pkgs.matched | default(0) | int > 0
+  tags: [builder_mode, verify_kernel]

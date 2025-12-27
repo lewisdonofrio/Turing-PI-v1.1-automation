@@ -1,0 +1,17 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/inventory/hosts
+# =============================================================================
+[build]
+kubenode1
+
+[workers]
+kubenode1
+kubenode2
+kubenode3
+kubenode4
+kubenode5
+kubenode6
+kubenode7
+
+[all:vars]
+ansible_user=ansible

@@ -1,0 +1,21 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/builder_user/tasks/main.yml
+# =============================================================================
+- name: Ensure builder user exists
+  user:
+    name: builder
+    state: present
+    shell: /bin/bash
+    create_home: yes
+  become: true
+  tags: [builder_mode, verify_builder]
+
+- name: Ensure builder home permissions are sane
+  file:
+    path: /home/builder
+    state: directory
+    owner: builder
+    group: builder
+    mode: "0755"
+  become: true
+  tags: [builder_mode, verify_builder]

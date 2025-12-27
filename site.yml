@@ -1,0 +1,41 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/site.yml
+# =============================================================================
+- name: Builder mode – prepare accounts and distcc on all nodes
+  hosts: workers
+  any_errors_fatal: true
+  roles:
+    - { role: builder_user, tags: ["builder_mode", "verify_builder"] }
+    - { role: distcc_manage, tags: ["builder_mode", "k3s_mode", "verify_builder"] }
+
+- name: Builder mode – build kernel across cluster
+  hosts: workers
+  any_errors_fatal: true
+  roles:
+    - { role: kernel_build, tags: ["builder_mode", "k3s_mode", "verify_kernel", "verify_builder"] }
+
+- name: Builder mode – collect built kernel package from kubenode1
+  hosts: build
+  any_errors_fatal: true
+  roles:
+    - { role: kernel_collect, tags: ["builder_mode", "verify_kernel"] }
+
+- name: Builder mode – deploy kernel package to all nodes
+  hosts: workers
+  any_errors_fatal: true
+  roles:
+    - { role: kernel_deploy, tags: ["builder_mode"] }
+
+- name: Builder mode – reboot nodes one by one
+  hosts: workers
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - { role: kernel_reboot, tags: ["builder_mode", "verify_kernel"] }
+
+- name: k3s mode – clean up build state on all nodes
+  hosts: workers
+  any_errors_fatal: false
+  roles:
+    - { role: distcc_manage, tags: ["k3s_mode"] }
+    - { role: kernel_build, tags: ["k3s_mode"] }

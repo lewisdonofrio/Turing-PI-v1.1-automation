@@ -1,0 +1,8 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_reboot/tasks/main.yml
+# =============================================================================
+- name: Reboot node
+  reboot:
+    reboot_timeout: 600
+  become: true
+  tags: [builder_mode, verify_kernel]

@@ -1,0 +1,123 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_build/tasks/main.yml
+# =============================================================================
+- name: Ensure tmpfs mountpoint exists on all nodes
+  file:
+    path: "{{ kernel_tmpfs_root }}"
+    state: directory
+    owner: builder
+    group: builder
+    mode: "0755"
+  become: true
+  tags: [builder_mode]
+
+- name: Mount tmpfs for kernel build on all nodes (builder mode)
+  mount:
+    path: "{{ kernel_tmpfs_root }}"
+    src: "tmpfs"
+    fstype: "tmpfs"
+    opts: "size={{ tmpfs_size }}"
+    state: mounted
+  become: true
+  tags: [builder_mode]
+
+- name: Sync kernel repo from kubenode1 into tmpfs on each node
+  synchronize:
+    src: "{{ kernel_repo_root }}/"
+    dest: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/"
+    delete: yes
+    rsync_opts:
+      - "--exclude=.git"
+  delegate_to: kubenode1
+  become: true
+  tags: [builder_mode]
+
+- name: Fix ownership in tmpfs on each node
+  file:
+    path: "{{ kernel_tmpfs_root }}/linux-rpi-k3s"
+    state: directory
+    recurse: yes
+    owner: builder
+    group: builder
+  become: true
+  tags: [builder_mode]
+
+- name: Install build-specific makepkg.conf on each node
+  template:
+    src: makepkg.conf.j2
+    dest: "{{ kernel_tmpfs_root }}/makepkg.conf"
+    owner: builder
+    group: builder
+    mode: "0644"
+  become: true
+  tags: [builder_mode]
+
+- name: Extract kernel source only (makepkg -o) on each node
+  become: true
+  become_user: builder
+  command: >
+    makepkg -o
+    --config {{ kernel_tmpfs_root }}/makepkg.conf
+  args:
+    chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+  tags: [builder_mode]
+
+- name: Find extracted kernel source directory on each node
+  find:
+    paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}/src"
+    file_type: directory
+    patterns: "linux-*"
+  register: kernel_src_dirs
+  tags: [builder_mode, verify_kernel]
+
+- name: Set kernel_src_dir fact on each node
+  set_fact:
+    kernel_src_dir: "{{ kernel_src_dirs.files[0].path }}"
+  when: kernel_src_dirs.matched | int > 0
+  tags: [builder_mode, verify_kernel]
+
+- name: Run enable-netfilter.sh on .config on each node
+  become: true
+  become_user: builder
+  command: >
+    ../../enable-netfilter.sh .config
+  args:
+    chdir: "{{ kernel_src_dir }}"
+  tags: [builder_mode]
+
+- name: Run make olddefconfig on each node
+  become: true
+  become_user: builder
+  command: make olddefconfig
+  args:
+    chdir: "{{ kernel_src_dir }}"
+  tags: [builder_mode]
+
+- name: Verify kernel config with check-enabled.sh on each node
+  become: true
+  become_user: builder
+  command: >
+    ../../check-enabled.sh .config
+  args:
+    chdir: "{{ kernel_src_dir }}"
+  register: config_check
+  failed_when: config_check.rc != 0
+  tags: [builder_mode, verify_kernel]
+
+- name: Build kernel package with distcc on kubenode1 only
+  become: true
+  become_user: builder
+  command: >
+    makepkg -s --nocheck
+    --config {{ kernel_tmpfs_root }}/makepkg.conf
+  args:
+    chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+  when: inventory_hostname == "kubenode1"
+  tags: [builder_mode]
+
+- name: Unmount tmpfs on all nodes in k3s mode or verify
+  mount:
+    path: "{{ kernel_tmpfs_root }}"
+    state: unmounted
+  become: true
+  tags: [k3s_mode, verify_builder]

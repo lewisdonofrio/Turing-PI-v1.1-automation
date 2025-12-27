@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/kernel_deploy/tasks/main.yml
+# =============================================================================
+- name: Ensure /tmp/kernel_pkgs exists on node
+  file:
+    path: /tmp/kernel_pkgs
+    state: directory
+    mode: "0755"
+  become: true
+  tags: [builder_mode]
+
+- name: Copy kernel package from control to node
+  copy:
+    src: "{{ kernel_pkg_staging }}/"
+    dest: /tmp/kernel_pkgs/
+    mode: "0644"
+  become: true
+  tags: [builder_mode]
+
+- name: Find kernel package on node
+  find:
+    paths: /tmp/kernel_pkgs
+    patterns: "{{ kernel_pkg_name }}-*.pkg.tar.zst"
+    file_type: file
+  register: node_kernel_pkgs
+  become: true
+  tags: [builder_mode, verify_kernel]
+
+- name: Install kernel package on node
+  pacman:
+    name: "{{ item.path }}"
+    state: present
+  loop: "{{ node_kernel_pkgs.files }}"
+  become: true
+  tags: [builder_mode]

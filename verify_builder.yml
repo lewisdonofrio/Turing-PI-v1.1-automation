@@ -1,0 +1,10 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/verify_builder.yml
+# =============================================================================
+- name: Verify builder-related state
+  hosts: workers
+  gather_facts: false
+  roles:
+    - { role: builder_user, tags: ["verify_builder"] }
+    - { role: distcc_manage, tags: ["verify_builder"] }
+    - { role: kernel_build, tags: ["verify_builder"] }

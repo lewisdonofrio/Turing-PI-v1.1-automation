@@ -1,0 +1,35 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/roles/distcc_manage/tasks/main.yml
+# =============================================================================
+- name: Install distcc in builder mode
+  pacman:
+    name: distcc
+    state: present
+  become: true
+  tags: [builder_mode]
+
+- name: Configure distccd in builder mode
+  copy:
+    dest: /etc/conf.d/distccd
+    content: |
+      DISTCCD_ARGS="--daemon --allow {{ distcc_allowed_subnet }} --log-file=/var/log/distccd.log"
+      NICE_LEVEL="10"
+      JOBS=""
+  become: true
+  tags: [builder_mode]
+
+- name: Enable and start distccd in builder mode
+  systemd:
+    name: distccd
+    enabled: yes
+    state: started
+  become: true
+  tags: [builder_mode]
+
+- name: Stop and disable distccd in k3s mode or verify
+  systemd:
+    name: distccd
+    enabled: no
+    state: stopped
+  become: true
+  tags: [k3s_mode, verify_builder]
