@@ -1,0 +1,5 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/artifacts/.gitkeep
+# =============================================================================
+# This file ensures the artifacts/ directory exists in the Git repository.
+# Kernel packages built by the cluster will be placed here automatically.
