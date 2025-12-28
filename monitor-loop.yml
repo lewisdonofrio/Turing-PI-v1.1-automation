@@ -1,0 +1,159 @@
+---
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/monitor-loop.yml
+# Purpose:
+#   One iteration of the cluster dashboard.
+#   Called repeatedly by compact-cluster-build-monitor.yml.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Collect metrics
+# ---------------------------------------------------------------------------
+
+- name: Get CPU load
+  command: cat /proc/loadavg
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: loadavg
+  changed_when: false
+
+- name: Get memory usage
+  command: free -h
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: mem
+  changed_when: false
+
+- name: Check distccd service
+  command: systemctl is-active distccd
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: distccd_status
+  ignore_errors: true
+  changed_when: false
+
+- name: Check active distcc jobs
+  command: pgrep -a distcc
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: distcc_jobs
+  ignore_errors: true
+  changed_when: false
+
+- name: Get network stats
+  command: cat /proc/net/dev
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: netdev
+  changed_when: false
+
+- name: Get uptime
+  command: uptime
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: uptime_out
+  changed_when: false
+
+- name: Get temperature
+  command: cat /sys/class/thermal/thermal_zone0/temp
+  delegate_to: "{{ item }}"
+  loop: "{{ cluster_nodes }}"
+  register: temp
+  ignore_errors: true
+  changed_when: false
+
+# ---------------------------------------------------------------------------
+# Build tables
+# ---------------------------------------------------------------------------
+
+- name: Build CPU table
+  set_fact:
+    cpu_table: |
+      ==================== CPU ====================
+      NODE        1m    5m    15m
+      ---------------------------------------------
+      {% for r in loadavg.results %}
+      {% set parts = (r.stdout | default('0 0 0')).split() %}
+      {{ r._delegated_vars.inventory_hostname }}   {{ parts[0] }}
+                   {{ parts[1] }}
+                   {{ parts[2] }}
+      {% endfor %}
+
+- name: Build Memory table
+  set_fact:
+    mem_table: |
+      ==================== MEMORY ====================
+      NODE        USED       FREE
+      ---------------------------------------------
+      {% for r in mem.results %}
+      {% set memlines = r.stdout_lines | default([]) %}
+      {% set memline = (memlines | select('search','^Mem') | list | first | default('Mem: 0 0 0 0')) %}
+      {% set cols = memline.split() %}
+      {{ r._delegated_vars.inventory_hostname }}   {{ cols[2] }}
+                   {{ cols[3] }}
+      {% endfor %}
+
+- name: Build distcc table
+  set_fact:
+    distcc_table: |
+      ==================== DISTCC / SERVICES ====================
+      NODE        STATUS       JOBS
+      -----------------------------------------------------------
+      {% for r in distccd_status.results %}
+      {% set node = r._delegated_vars.inventory_hostname %}
+      {% set match = (distcc_jobs.results | selectattr('_delegated_vars.inventory_hostname','equalto',node) | list | first | default(None)) %}
+      {% set jobs_raw = match.stdout if match is not none else 'none' %}
+      {{ node }}   {{ r.stdout | default('unknown') }}
+                   {{ jobs_raw | regex_replace('\n',' ') }}
+      {% endfor %}
+
+- name: Build uptime/temperature table
+  set_fact:
+    uptime_table: |
+      ==================== UPTIME / TEMPERATURE ====================
+      NODE        UPTIME     TEMP
+      --------------------------------------------------------------
+      {% for r in uptime_out.results %}
+      {% set node = r._delegated_vars.inventory_hostname %}
+      {% set upraw = r.stdout | default('up 0 0') %}
+      {% set parts = upraw.split() %}
+      {% set t_match = (temp.results | selectattr('_delegated_vars.inventory_hostname','equalto',node) | list | first | default(None)) %}
+      {% set t_raw = t_match.stdout if t_match is not none else 'n/a' %}
+      {{ node }}   {{ parts[2] | default('0') }}
+                   {% if t_raw != 'n/a' %}
+                   {{ (t_raw | int / 1000) | round(1) }}C
+                   {% else %}
+                   n/a
+                   {% endif %}
+      {% endfor %}
+
+# ---------------------------------------------------------------------------
+# Display dashboard
+# ---------------------------------------------------------------------------
+
+- name: Display dashboard
+  debug:
+    msg: |
+      {{ '\u001b[2J\u001b[H' }}Cluster Monitor
+
+      {{ cpu_table }}
+
+      {{ mem_table }}
+
+      {{ distcc_table }}
+
+      ==================== NETWORK ====================
+      {% for r in netdev.results %}
+      --- {{ r._delegated_vars.inventory_hostname }} ---
+      {{ r.stdout }}
+      {% endfor %}
+
+      {{ uptime_table }}
+
+# ---------------------------------------------------------------------------
+# Sleep
+# ---------------------------------------------------------------------------
+
+- name: Sleep before next refresh
+  pause:
+    seconds: "{{ refresh_interval }}"

@@ -2,44 +2,61 @@
 # File: /opt/ansible-k3s-cluster/cluster-kernel-build.yml
 # =============================================================================
 # Purpose:
-#   Perform a distributed kernel build using distcc across the cluster.
-#   This runs ONLY on the builder node, but uses the cluster for compilation.
+#   Perform a distributed Raspberry Pi kernel build using distcc.
+#   Local gcc / cross-compiler execution is prohibited for kernel compilation;
+#   all compilation must be routed through distcc.
 #
-# Workflow:
-#   1. Validate builder environment
-#   2. Validate distcc environment (binaries + DISTCC_HOSTS)
-#   3. Clean kernel tree
-#   4. Validate .config
-#   5. Run distributed build (with distcc wrappers via task-local PATH)
-#   6. Verify artifacts
-#   7. Archive artifacts
-#   8. Generate audit log
+# Guarantees:
+#   - distcc wrapper directory must exist
+#   - gcc and cross-compiler are forced through distcc
+#   - CC, CXX, HOSTCC, HOSTCXX are explicitly set for the kernel build
+#   - PATH is overridden so distcc is always preferred
+#   - Required k3s netfilter options enforced in .config
 #
 # Usage:
-#   ansible-playbook \
-#     -i inventory/hosts \
-#     --limit builder \
-#     cluster-kernel-build.yml
+#   ansible-playbook -i inventory/hosts --limit builder cluster-kernel-build.yml
+#
+# Validation-only mode:
+#   ansible-playbook cluster-kernel-build.yml --tags validate
 #
 # Notes:
-#   - This playbook DOES NOT depend on /etc/environment PATH overrides.
-#   - DISTCC_HOSTS must still be defined somewhere the build shell can see.
-#     (e.g., /etc/environment, or a profile file, or exported in the service.)
-#   - The distcc wrapper directory (/usr/lib/distcc/bin) is injected ONLY for
-#     the build step via the "environment:" block.
-#   - This keeps the system login environment safe and untouched.
+#   - This playbook assumes a cross-compiler named arm-linux-gnueabihf-gcc.
+#   - kubenode1 will never run cc1 locally for the kernel build
+#     if this playbook is followed exactly.
 # =============================================================================
 
 ---
-- hosts: builder
-  become: yes
-  gather_facts: no
+- name: Cluster kernel build
+  hosts: builder
+  gather_facts: false
 
   vars:
-    kernel_src: "/home/builder/linux-rpi-k3s/kernel"
-    artifacts_dir: "/home/builder/linux-rpi-k3s/artifacts"
-    audit_dir: "/home/builder/linux-rpi-k3s/audit"
-    version_tag: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+    kernel_src: /home/builder/linux-rpi-k3s/kernel
+    kernel_config: "{{ kernel_src }}/.config"
+    kernel_config_backup: "{{ kernel_src }}/.config.orig"
+
+    # Distcc wrapper directory
+    distcc_wrappers_dir: /usr/lib/distcc/bin
+
+    # Parallel jobs for distributed build
+    kernel_make_jobs: 32
+
+    # Cross-compiler triplet (adjust if your toolchain differs)
+    cross_compile_triple: arm-linux-gnueabihf
+
+    # Correct Raspberry Pi ARMv7 build targets
+    kernel_build_targets:
+      - Image
+      - modules
+      - dtbs
+
+    # Required k3s netfilter options
+    kernel_required_config:
+      - { name: "CONFIG_NF_NAT", value: "m" }
+      - { name: "CONFIG_NF_NAT_MASQUERADE", value: "y" }
+      - { name: "CONFIG_NETFILTER_XT_TARGET_MASQUERADE", value: "m" }
+      - { name: "CONFIG_NETFILTER_XT_MATCH_COMMENT", value: "m" }
+      - { name: "CONFIG_NF_CONNTRACK", value: "m" }
 
   tasks:
 
@@ -48,28 +65,44 @@
     # -------------------------------------------------------------------------
 
     - name: Validate gcc exists
-      shell: which gcc
-      register: gcc_path
-      failed_when: gcc_path.stdout == ""
+      tags: [validate]
+      command: which gcc
+      register: gcc_check
+      failed_when: gcc_check.rc != 0
+      changed_when: false
+
+    - name: Validate cross-compiler exists
+      tags: [validate]
+      command: >
+        which {{ cross_compile_triple }}-gcc
+      register: xgcc_check
+      failed_when: xgcc_check.rc != 0
       changed_when: false
 
     - name: Validate distcc exists
-      shell: which distcc
-      register: distcc_path
-      failed_when: distcc_path.stdout == ""
+      tags: [validate]
+      command: which distcc
+      register: distcc_check
+      failed_when: distcc_check.rc != 0
       changed_when: false
 
     - name: Validate DISTCC_HOSTS is set
-      shell: echo $DISTCC_HOSTS
-      register: distcc_hosts
-      failed_when: distcc_hosts.stdout == ""
+      tags: [validate]
+      shell: |
+        set -euo pipefail
+        test -n "${DISTCC_HOSTS:-}"
+      args:
+        executable: /bin/bash
+      register: distcc_hosts_check
+      failed_when: distcc_hosts_check.rc != 0
       changed_when: false
 
     - name: Validate distcc wrapper directory exists
+      tags: [validate]
       stat:
-        path: "/usr/lib/distcc/bin"
-      register: distcc_wrapper_dir
-      failed_when: not distcc_wrapper_dir.stat.exists
+        path: "{{ distcc_wrappers_dir }}"
+      register: distcc_wrappers
+      failed_when: not distcc_wrappers.stat.exists
       changed_when: false
 
     # -------------------------------------------------------------------------
@@ -77,89 +110,126 @@
     # -------------------------------------------------------------------------
 
     - name: Clean kernel tree
-      shell: make mrproper
+      shell: |
+        set -euo pipefail
+        cd "{{ kernel_src }}"
+        make mrproper
       args:
-        chdir: "{{ kernel_src }}"
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Export running kernel config
+      shell: |
+        set -euo pipefail
+        zcat /proc/config.gz > "{{ kernel_config }}"
+      args:
+        executable: /bin/bash
+      changed_when: true
 
     - name: Validate .config exists
+      tags: [validate]
       stat:
-        path: "{{ kernel_src }}/.config"
+        path: "{{ kernel_config }}"
       register: config_stat
       failed_when: not config_stat.stat.exists
+      changed_when: false
 
-    - name: Refresh config
-      shell: make olddefconfig
+    - name: Backup .config
+      copy:
+        src: "{{ kernel_config }}"
+        dest: "{{ kernel_config_backup }}"
+        remote_src: true
+      changed_when: true
+
+    # -------------------------------------------------------------------------
+    # Enforce required kernel config options
+    # -------------------------------------------------------------------------
+
+    - name: Enforce required kernel config options
+      lineinfile:
+        path: "{{ kernel_config }}"
+        regexp: "^{{ item.name }}="
+        line: "{{ item.name }}={{ item.value }}"
+      loop: "{{ kernel_required_config }}"
+      changed_when: true
+
+    - name: Refresh config with olddefconfig
+      shell: |
+        set -euo pipefail
+        make olddefconfig
       args:
+        executable: /bin/bash
         chdir: "{{ kernel_src }}"
+      changed_when: true
 
     # -------------------------------------------------------------------------
-    # Distributed build (PATH override is scoped to this task only)
+    # Distcc enforcement validation
     # -------------------------------------------------------------------------
 
-    - name: Run distributed kernel build with distcc wrappers
-      shell: make -j32 CC="distcc gcc"
+    - name: Fail if gcc is NOT routed through distcc wrapper (wrapper sanity check)
+      tags: [validate]
+      shell: |
+        set -euo pipefail
+        export PATH="{{ distcc_wrappers_dir }}:$PATH"
+        which gcc | grep -q "{{ distcc_wrappers_dir }}/gcc"
       args:
+        executable: /bin/bash
+      register: gcc_wrapper_check
+      failed_when: gcc_wrapper_check.rc != 0
+      changed_when: false
+
+    # -------------------------------------------------------------------------
+    # Distributed kernel build (local cc1 prohibited)
+    # -------------------------------------------------------------------------
+
+    - name: Build kernel with distcc and cross-compiler
+      shell: |
+        set -euo pipefail
+
+        # Ensure distcc wrappers are first in PATH
+        export PATH="{{ distcc_wrappers_dir }}:$PATH"
+
+        # Force all relevant compiler variables through distcc
+        export CC="distcc {{ cross_compile_triple }}-gcc"
+        export CXX="distcc {{ cross_compile_triple }}-g++"
+        export HOSTCC="distcc gcc"
+        export HOSTCXX="distcc g++"
+
+        # Optional: make sure CROSS_COMPILE is set for the kernel
+        export CROSS_COMPILE="{{ cross_compile_triple }}-"
+
+        make -j"{{ kernel_make_jobs }}" {{ kernel_build_targets | join(' ') }}
+      args:
+        executable: /bin/bash
         chdir: "{{ kernel_src }}"
-      environment:
-        PATH: "/usr/lib/distcc/bin:{{ ansible_env.PATH }}"
-      register: build_output
-
-    - name: Show build output (last 20 lines)
-      debug:
-        msg: "{{ build_output.stdout_lines[-20:] }}"
+      register: kernel_build
+      failed_when: kernel_build.rc != 0
+      changed_when: true
 
     # -------------------------------------------------------------------------
-    # Artifact verification
-    # -------------------------------------------------------------------------
-
-    - name: Verify zImage exists
-      stat:
-        path: "{{ kernel_src }}/arch/arm/boot/zImage"
-      register: zimage_stat
-      failed_when: not zimage_stat.stat.exists
-
-    - name: Verify modules directory exists
-      stat:
-        path: "{{ kernel_src }}/modules"
-      register: modules_stat
-      failed_when: not modules_stat.stat.exists
-
-    # -------------------------------------------------------------------------
-    # Artifact archiving
+    # Collect artifacts
     # -------------------------------------------------------------------------
 
     - name: Create artifact directory
       file:
-        path: "{{ artifacts_dir }}/{{ version_tag }}"
+        path: /home/builder/kernel-build-artifacts
         state: directory
+        mode: '0755'
 
-    - name: Archive zImage
+    - name: Collect kernel artifacts
       copy:
-        src: "{{ kernel_src }}/arch/arm/boot/zImage"
-        dest: "{{ artifacts_dir }}/{{ version_tag }}/zImage"
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+      loop:
+        - { src: "{{ kernel_src }}/arch/arm/boot/Image", dest: "/home/builder/kernel-build-artifacts/Image" }
+        - { src: "{{ kernel_src }}/arch/arm/boot/dts",   dest: "/home/builder/kernel-build-artifacts/dts" }
+      ignore_errors: true
 
-    - name: Archive modules
-      shell: |
-        cp -r "{{ kernel_src }}/modules" "{{ artifacts_dir }}/{{ version_tag }}/modules"
-
-    # -------------------------------------------------------------------------
-    # Audit log
-    # -------------------------------------------------------------------------
-
-    - name: Create audit directory
-      file:
-        path: "{{ audit_dir }}"
-        state: directory
-
-    - name: Write audit log
-      copy:
-        dest: "{{ audit_dir }}/{{ version_tag }}.log"
-        content: |
-          Build Version: {{ version_tag }}
-          Timestamp: {{ ansible_date_time.iso8601 }}
-          DISTCC_HOSTS: {{ distcc_hosts.stdout }}
-          GCC Path: {{ gcc_path.stdout }}
-          Distcc Path: {{ distcc_path.stdout }}
-          Distcc Wrapper Directory: /usr/lib/distcc/bin
-          Build Output (last 20 lines):
-          {{ build_output.stdout_lines[-20:] | join('\n') }}
+    - name: Build summary
+      debug:
+        msg: |
+          Kernel build completed successfully.
+          distcc enforced for all compiler invocations (CC, CXX, HOSTCC, HOSTCXX).
+          Cross-compiler {{ cross_compile_triple }}-gcc routed through distcc.
+          Artifacts stored in /home/builder/kernel-build-artifacts

@@ -1,0 +1,19 @@
+---
+
+- name: Persistent Cluster Monitor
+  hosts: builder
+  gather_facts: false
+
+  vars:
+    cluster_nodes: "{{ groups['k3s_cluster'] }}"
+    refresh_interval: 10
+
+  tasks:
+    - name: Start persistent monitor loop
+      include_tasks: monitor-loop.yml
+      vars:
+        cluster_nodes: "{{ cluster_nodes }}"
+        refresh_interval: "{{ refresh_interval }}"
+      loop: "{{ range(0, 999999) | list }}"
+      loop_control:
+        loop_var: iteration
