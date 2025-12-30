@@ -1,0 +1,67 @@
+# /opt/ansible-k3s-cluster/playbooks/worker-distccd-reset.yml
+# Purpose: Reset distccd on all workers to avoid stale states.
+# Author: Lewis Donofrio
+# Notes:
+#   - Ensures workers start with clean distccd and no stuck cc1.
+#   - Applies systemd override if needed.
+#   - Safe to run at any time. ASCII-only.
+
+- name: Reset distccd on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Stop distccd service
+      ansible.builtin.systemd:
+        name: distccd
+        state: stopped
+
+    - name: Kill any leftover distccd processes
+      ansible.builtin.shell: |
+        pkill -9 distccd || true
+      args:
+        executable: /bin/bash
+
+    - name: Kill any leftover cc1 processes
+      ansible.builtin.shell: |
+        pkill -9 cc1 || true
+      args:
+        executable: /bin/bash
+
+    - name: Ensure systemd override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/distccd.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Install correct distccd override
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/distccd.service.d/override.conf
+        mode: "0644"
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/distccd --no-detach --allow 192.168.29.0/24 --jobs 6 --log-file /var/log/distccd/distccd.log --pid-file /run/distccd/distccd.pid
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Start distccd service
+      ansible.builtin.systemd:
+        name: distccd
+        state: started
+        enabled: true
+
+    - name: Confirm worker distccd state
+      ansible.builtin.shell: |
+        ps aux | grep distccd | grep -v grep || true
+      args:
+        executable: /bin/bash
+      register: worker_processes
+
+    - name: Show worker process state
+      ansible.builtin.debug:
+        msg: "{{ worker_processes.stdout_lines }}"

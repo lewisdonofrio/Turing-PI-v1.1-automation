@@ -1,0 +1,37 @@
+# /opt/ansible-k3s-cluster/playbooks/distcc-mode-switch.yml
+# Purpose: Switch entire cluster into distcc build mode safely.
+# Author: Lewis Donofrio
+# Notes:
+#   - Ensures builder is clean (no distccd).
+#   - Ensures workers are clean and running distccd.
+#   - Safe to run at 1am. ASCII-only.
+
+- name: Switch cluster to distcc build mode
+  hosts: all
+  gather_facts: false
+
+  tasks:
+
+    - name: Stop k3s everywhere
+      ansible.builtin.systemd:
+        name: k3s
+        state: stopped
+      ignore_errors: true
+
+- name: Clean builder state
+  import_playbook: /opt/ansible-k3s-cluster/playbooks/builder-distccd-guard.yml
+
+- name: Reset workers for distcc
+  import_playbook: /opt/ansible-k3s-cluster/playbooks/worker-distccd-reset.yml
+
+- name: Report mode switch complete
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - name: Mode switch summary
+      ansible.builtin.debug:
+        msg:
+          - "Cluster is now in DISTCC BUILD MODE."
+          - "Builder is clean (no distccd)."
+          - "Workers are running distccd."
+          - "Safe to run kernel-build.yml now."

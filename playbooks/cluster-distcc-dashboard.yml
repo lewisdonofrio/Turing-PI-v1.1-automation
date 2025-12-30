@@ -1,0 +1,59 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-dashboard.yml
+# Purpose: Show distcc configuration and status across builder and workers.
+# Behavior: Read-only. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Summarizes systemd unit, override, process state, and version.
+
+- name: Distcc cluster dashboard
+  hosts: builder,workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Show node role and hostname
+      ansible.builtin.debug:
+        msg: "Host {{ inventory_hostname }} (role={{ group_names }})"
+
+    - name: Show distccd systemd unit status
+      ansible.builtin.shell: |
+        systemctl is-enabled distccd || echo "distccd not enabled"
+        systemctl is-active distccd || echo "distccd not active"
+      args:
+        executable: /bin/bash
+      register: distccd_state
+      changed_when: false
+
+    - name: Show distccd systemd status summary
+      ansible.builtin.debug:
+        var: distccd_state.stdout_lines
+
+    - name: Show distccd ExecStart (effective)
+      ansible.builtin.shell: |
+        systemctl cat distccd | sed -n '/^
+
+\[Service\]
+
+/,/^
+
+\[/{p}' | grep -E '^ExecStart=' || true
+      args:
+        executable: /bin/bash
+      register: distccd_exec
+      changed_when: false
+
+    - name: Show distccd ExecStart lines
+      ansible.builtin.debug:
+        var: distccd_exec.stdout_lines
+
+    - name: Show distcc version
+      ansible.builtin.shell: |
+        distccd --version 2>/dev/null || distcc --version 2>/dev/null || echo "distcc/distccd not installed"
+      args:
+        executable: /bin/bash
+      register: distcc_version
+      changed_when: false
+
+    - name: Display distcc version
+      ansible.builtin.debug:
+        var: distcc_version.stdout_lines

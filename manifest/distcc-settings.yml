@@ -1,0 +1,6 @@
+---
+# /opt/ansible-k3s-cluster/manifest/distcc-settings.yml
+# Purpose: Declarative distcc settings used by playbooks.
+
+distcc_allow_network: 192.168.29.0/24
+distcc_jobs_per_worker: 4

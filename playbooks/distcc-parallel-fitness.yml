@@ -1,0 +1,56 @@
+# /opt/ansible-k3s-cluster/playbooks/distcc-parallel-fitness.yml
+# Purpose: Stress-test all workers by spawning 7 parallel distcc jobs.
+# Behavior: Builder-only. Safe to run at 2am.
+# Author: Lewis Donofrio
+
+- name: Distcc parallel fitness test
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    parallel_jobs: 7
+
+  tasks:
+
+    - name: Create slower test source file
+      ansible.builtin.copy:
+        dest: /tmp/distcc_parallel_test.c
+        mode: '0644'
+        content: |
+          int main() {
+              volatile int x = 0;
+              for (int i = 0; i < 80000000; i++) { x += i; }
+              return x;
+          }
+
+    - name: Run N parallel distcc jobs
+      ansible.builtin.shell: |
+        export PATH="/usr/lib/distcc/bin:$PATH"
+        export CC="distcc gcc"
+
+        echo "=== Starting {{ parallel_jobs }} parallel distcc jobs ==="
+
+        seq {{ parallel_jobs }} | xargs -n1 -P{{ parallel_jobs }} -I{} \
+          sh -c 'distcc gcc -c /tmp/distcc_parallel_test.c -o /tmp/out{}.o'
+
+        echo "=== Parallel jobs complete ==="
+      register: parallel_output
+      args:
+        executable: /bin/bash
+
+    - name: Show distccmon-text snapshot
+      ansible.builtin.shell: |
+        echo "=== DISTCCMON SNAPSHOT ==="
+        distccmon-text 2
+      register: mon_output
+      args:
+        executable: /bin/bash
+
+    - name: Show parallel job output
+      ansible.builtin.debug:
+        msg: "{{ parallel_output.stdout }}"
+
+    - name: Show distccmon-text output
+      ansible.builtin.debug:
+        msg: "{{ mon_output.stdout }}"

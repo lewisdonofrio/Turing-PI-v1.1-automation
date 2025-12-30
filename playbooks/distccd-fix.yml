@@ -1,0 +1,49 @@
+# playbooks/distccd-fix.yml
+# Fix distccd systemd override on all workers.
+# Ensures correct ExecStart and PATH for compiler discovery.
+# Canonical, explicit, ASCII-safe.
+
+- name: Fix distccd ExecStart override on all distcc workers
+  hosts: distcc_workers
+  become: true
+
+  tasks:
+
+    - name: Ensure systemd override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/distccd.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install corrected distccd override (full path, explicit)
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/distccd.service.d/override.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          # /etc/systemd/system/distccd.service.d/override.conf
+          # Explicit override restoring --daemon and correct allowlist.
+          # Also sets PATH so distccd can find the correct compiler.
+
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/distccd --no-detach --allow 192.168.29.0/24 --jobs 4
+          Environment=PATH=/usr/lib/distcc/bin:/usr/bin:/bin
+
+      notify:
+        - systemd_daemon_reload
+        - restart_distccd
+
+  handlers:
+
+    - name: systemd_daemon_reload
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: restart_distccd
+      ansible.builtin.systemd:
+        name: distccd
+        state: restarted

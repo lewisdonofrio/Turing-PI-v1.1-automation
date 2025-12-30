@@ -1,0 +1,77 @@
+# /opt/ansible-k3s-cluster/playbooks/distccd-bootstrap.yml
+# Purpose: Install and configure distccd on all worker nodes.
+# Behavior: Worker-only. Safe to run after reboot or power loss.
+# Author: Lewis Donofrio
+# Notes: Ensures distccd is consistent, persistent, and ready for distributed builds.
+
+- name: Bootstrap distccd on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    distcc_allowed: "192.168.29.0/24"
+    distcc_jobs: 6
+    distcc_bin_dir: "/usr/lib/distcc"
+
+  tasks:
+
+    - name: Ensure distcc package is installed
+      ansible.builtin.package:
+        name: distcc
+        state: present
+
+    - name: Ensure distcc bin directory exists
+      ansible.builtin.file:
+        path: "{{ distcc_bin_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create distcc symlinks for gcc/g++
+      ansible.builtin.file:
+        src: /usr/bin/distcc
+        dest: "{{ distcc_bin_dir }}/{{ item }}"
+        state: link
+      loop:
+        - gcc
+        - g++
+        - cc
+        - c++
+
+    - name: Create distcc symlinks for ARM triplet compilers
+      ansible.builtin.file:
+        src: /usr/bin/distcc
+        dest: "{{ distcc_bin_dir }}/{{ item }}"
+        state: link
+      loop:
+        - armv7l-unknown-linux-gnueabihf-gcc
+        - armv7l-unknown-linux-gnueabihf-g++
+
+    - name: Install systemd override for distccd
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/distccd.service.d/override.conf
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/distccd --no-detach \
+            --allow {{ distcc_allowed }} \
+            --jobs {{ distcc_jobs }} \
+            --log-file /var/log/distccd/distccd.log \
+            --pid-file /run/distccd/distccd.pid
+          RuntimeDirectory=distccd
+          RuntimeDirectoryMode=0755
+          LogsDirectory=distccd
+          LogsDirectoryMode=0755
+      notify:
+        - Reload systemd
+        - Restart distccd
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+
+    - name: Restart distccd
+      ansible.builtin.service:
+        name: distccd
+        state: restarted
+        enabled: true

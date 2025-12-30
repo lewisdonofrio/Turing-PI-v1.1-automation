@@ -1,0 +1,51 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-smoketest.yml
+# Purpose: Compile a small C program via distcc on all workers.
+# Notes: Run while watching distccmon-text on the builder.
+
+- name: Distcc smoketest from builder
+  hosts: builder
+  become: false
+
+  vars_files:
+    - /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
+
+  vars:
+    distcc_test_dir: /tmp/distcc-smoketest
+    distcc_test_source: /tmp/distcc-smoketest/hello.c
+    distcc_hosts_env: "{{ distcc_hosts | join(' ') }}"
+
+  tasks:
+
+    - name: Create smoketest directory
+      ansible.builtin.file:
+        path: "{{ distcc_test_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Install test C source
+      ansible.builtin.copy:
+        dest: "{{ distcc_test_source }}"
+        mode: '0644'
+        content: |
+          #include <stdio.h>
+          int main(void) {
+              printf("hello from distcc\n");
+              return 0;
+          }
+
+    - name: Clean previous artifacts
+      ansible.builtin.file:
+        path: "{{ distcc_test_dir }}/hello.o"
+        state: absent
+
+    - name: Run distcc smoketest compile (forced distcc, bypass wrapper, explicit paths)
+      ansible.builtin.command:
+        cmd: >
+          /usr/bin/env
+          PATH="/usr/bin:/bin"
+          DISTCC_HOSTS="{{ distcc_hosts_env }}"
+          /usr/bin/distcc /usr/bin/gcc -c "{{ distcc_test_source }}" -o "{{ distcc_test_dir }}/hello.o"
+      args:
+        chdir: "{{ distcc_test_dir }}"
+

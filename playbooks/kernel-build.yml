@@ -1,0 +1,75 @@
+# /opt/ansible-k3s-cluster/playbooks/kernel-build.yml
+# Purpose: Distributed kernel build on native ARMv7 (CM3+)
+# Notes:
+#   - Native Arch ARM toolchain (no prefix)
+#   - Distcc wraps gcc/g++
+#   - Binutils are native (ld, as, objcopy, objdump)
+
+- name: Distributed kernel build (builder-only)
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    distcc_hosts: "kubenode2.home.lab kubenode3.home.lab kubenode4.home.lab kubenode5.home.lab kubenode6.home.lab kubenode7.home.lab"
+    workspace: "/home/builder/linux-rpi-k3s/kernel"
+    build_log: "/home/builder/linux-rpi-k3s/kernel/kernel-build.log"
+
+  tasks:
+
+    - name: Ensure kernel workspace exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}"
+      register: ws
+
+    - name: Fail if workspace missing
+      ansible.builtin.fail:
+        msg: "Kernel workspace missing at {{ workspace }}"
+      when: not ws.stat.exists
+
+    - name: Ensure .config exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}/.config"
+      register: config_stat
+
+    - name: Fail if .config missing
+      ansible.builtin.fail:
+        msg: ".config missing in kernel workspace"
+      when: not config_stat.stat.exists
+
+    - name: Run distributed kernel build (native ARMv7 + distcc)
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ workspace }}"
+
+        echo "=== FORCING DISTCC ENVIRONMENT (NATIVE ARMV7) ==="
+
+        # Distcc wrapper directory first
+        export PATH="/usr/lib/distcc/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+
+        # Native ARMv7 build
+        export ARCH=arm
+        export CROSS_COMPILE=""
+
+        # Distcc cluster
+        export DISTCC_HOSTS="{{ distcc_hosts }}"
+
+        # Force gcc/g++ through distcc
+        export CC="distcc gcc"
+        export HOSTCC="distcc gcc"
+        export HOSTCXX="distcc g++"
+
+        echo "PATH=$PATH"
+        echo "CROSS_COMPILE=$CROSS_COMPILE"
+        echo "DISTCC_HOSTS=$DISTCC_HOSTS"
+
+        echo "=== STARTING DISTRIBUTED KERNEL BUILD ==="
+        make -j16 2>&1 | tee "{{ build_log }}"
+      args:
+        executable: /bin/bash
+      register: build_output
+      changed_when: true
+
+    - name: Report build completion
+      ansible.builtin.debug:
+        msg: "Kernel build completed. Log saved to {{ build_log }}"

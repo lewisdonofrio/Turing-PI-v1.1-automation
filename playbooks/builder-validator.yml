@@ -1,0 +1,50 @@
+# /opt/ansible-k3s-cluster/playbooks/builder-validator.yml
+# Purpose: Validate builder environment before any distributed build.
+# Behavior: Pure validation. No changes. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Ensures PATH, distcc, wrapper, and DISTCC_HOSTS are correct.
+
+- name: Validate builder environment
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check builder PATH
+      ansible.builtin.shell: "echo $PATH"
+      register: builder_path
+      changed_when: false
+
+    - name: Report builder PATH
+      ansible.builtin.debug:
+        msg: "PATH={{ builder_path.stdout }}"
+
+    - name: Check distcc binary
+      ansible.builtin.stat:
+        path: /usr/bin/distcc
+      register: distcc_stat
+
+    - name: Fail if distcc missing
+      ansible.builtin.fail:
+        msg: "distcc missing on builder"
+      when: not distcc_stat.stat.exists
+
+    - name: Check gcc wrapper
+      ansible.builtin.stat:
+        path: /usr/lib/distcc/bin/gcc
+      register: wrapper_stat
+
+    - name: Fail if wrapper missing
+      ansible.builtin.fail:
+        msg: "gcc wrapper missing on builder"
+      when: not wrapper_stat.stat.exists
+
+    - name: Check DISTCC_HOSTS
+      ansible.builtin.shell: "echo $DISTCC_HOSTS"
+      register: hosts_env
+      changed_when: false
+
+    - name: Report DISTCC_HOSTS
+      ansible.builtin.debug:
+        msg: "DISTCC_HOSTS={{ hosts_env.stdout }}"

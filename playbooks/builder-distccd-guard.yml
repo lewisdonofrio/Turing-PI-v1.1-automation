@@ -1,0 +1,43 @@
+# /opt/ansible-k3s-cluster/playbooks/builder-distccd-guard.yml
+# Purpose: Ensure the builder node NEVER runs distccd.
+# Author: Lewis Donofrio
+# Notes:
+#   - distccd on the builder causes job hijacking and cluster hangs.
+#   - This playbook enforces a clean builder state for distcc dispatching.
+#   - Safe to run repeatedly. Idempotent. ASCII-only.
+
+- name: Disable and kill distccd on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Stop distccd service on builder
+      ansible.builtin.systemd:
+        name: distccd
+        state: stopped
+        enabled: false
+
+    - name: Kill any rogue distccd processes
+      ansible.builtin.shell: |
+        pkill -9 distccd || true
+      args:
+        executable: /bin/bash
+
+    - name: Kill any leftover cc1 processes on builder
+      ansible.builtin.shell: |
+        pkill -9 cc1 || true
+      args:
+        executable: /bin/bash
+
+    - name: Confirm builder is clean
+      ansible.builtin.shell: |
+        ps aux | grep -E "distccd|cc1" | grep -v grep || true
+      args:
+        executable: /bin/bash
+      register: builder_processes
+
+    - name: Show builder process state
+      ansible.builtin.debug:
+        msg: "{{ builder_processes.stdout_lines }}"

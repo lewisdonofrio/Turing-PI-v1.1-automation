@@ -1,0 +1,23 @@
+# /opt/ansible-k3s-cluster/playbooks/mode-status.yml
+# Purpose: Report whether cluster is in BUILD MODE or CLUSTER MODE.
+# Behavior: Read-only. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Uses k3s-server state to determine mode.
+
+- name: Determine mode based on k3s-server state
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check k3s-server status
+      ansible.builtin.shell: systemctl is-active k3s || true
+      register: k3s_status
+      changed_when: false
+
+    - name: Report mode
+      ansible.builtin.debug:
+        msg: >
+          {{
+            "CLUSTER MODE (k3s running)" if k3s_status.stdout == "active"
+            else "BUILD MODE (k3s stopped)"
+          }}

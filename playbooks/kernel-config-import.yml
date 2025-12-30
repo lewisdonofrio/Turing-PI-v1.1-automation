@@ -1,0 +1,59 @@
+# /opt/ansible-k3s-cluster/playbooks/kernel-config-import.yml
+# Purpose: Import running kernel config into the kernel workspace.
+# Behavior: Builder-only. No worker changes. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Extracts /proc/config.gz, writes .config, runs olddefconfig.
+
+- name: Import running kernel config (builder-only)
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    workspace: "/home/builder/linux-rpi-k3s/kernel"
+    config_path: "/home/builder/linux-rpi-k3s/kernel/.config"
+
+  tasks:
+
+    - name: Ensure kernel workspace exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}"
+      register: ws
+
+    - name: Fail if workspace missing
+      ansible.builtin.fail:
+        msg: "Kernel workspace missing at {{ workspace }}"
+      when: not ws.stat.exists
+
+    - name: Extract running kernel config to .config
+      ansible.builtin.shell: |
+        zcat /proc/config.gz > {{ config_path }}
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Run make olddefconfig
+      ansible.builtin.shell: |
+        cd {{ workspace }}
+        export PATH="/usr/lib/distcc:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+        export CC="distcc gcc"
+        export HOSTCC="distcc gcc"
+        export HOSTCXX="distcc g++"
+        make olddefconfig
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Verify .config exists
+      ansible.builtin.stat:
+        path: "{{ config_path }}"
+      register: config_stat
+
+    - name: Fail if .config missing
+      ansible.builtin.fail:
+        msg: ".config missing after import"
+      when: not config_stat.stat.exists
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: "Kernel .config imported and updated successfully."

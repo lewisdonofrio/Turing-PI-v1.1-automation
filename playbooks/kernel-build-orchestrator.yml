@@ -1,0 +1,38 @@
+# /opt/ansible-k3s-cluster/playbooks/kernel-build-orchestrator.yml
+# Purpose: Orchestrate full distributed kernel build sequence end-to-end.
+# Behavior: Top-level orchestration. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Runs distccd bootstrap, distcc validation, kernel config import, and kernel build.
+# Adds uptime preflight to avoid running after a crash.
+
+- name: Kernel build orchestrator preflight
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check system uptime
+      ansible.builtin.shell: awk '{print int($1)}' /proc/uptime
+      register: uptime_seconds
+      changed_when: false
+
+    - name: Fail if uptime < 300 seconds (5 minutes)
+      ansible.builtin.fail:
+        msg: "System rebooted recently (uptime {{ uptime_seconds.stdout }}s). Run builder-mode.yml first."
+      when: uptime_seconds.stdout | int < 300
+
+
+- import_playbook: distccd-bootstrap.yml
+
+- import_playbook: cluster-distcc-validate.yml
+
+- import_playbook: cluster-distcc-smoketest.yml
+
+- import_playbook: kernel-config-import.yml
+
+# - import_playbook: kernel-build.yml
+
+# Optional:
+# - import_playbook: kernel-postbuild-validator.yml
+# - import_playbook: cluster-mode-restore.yml

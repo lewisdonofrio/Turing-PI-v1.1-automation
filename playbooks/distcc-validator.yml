@@ -1,0 +1,111 @@
+# /opt/ansible-k3s-cluster/playbooks/distcc-validator.yml
+# Validate distccd environment on all workers.
+# No changes. Pure validation. Pure signal.
+
+- name: Validate distccd environment on all distcc workers
+  hosts: distcc_workers
+  become: true
+  gather_facts: false
+
+  vars:
+    expected_path: "/usr/lib/distcc/bin:/usr/bin:/bin"
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Check distccd is running
+    # -------------------------------------------------------------------------
+    - name: Get distccd PID
+      ansible.builtin.shell: "pgrep -n distccd || true"
+      register: distccd_pid
+      changed_when: false
+
+    - name: Fail if distccd is not running
+      ansible.builtin.fail:
+        msg: "distccd is NOT running on this node"
+      when: distccd_pid.stdout == ""
+
+    # -------------------------------------------------------------------------
+    # Check PATH inside distccd environment
+    # -------------------------------------------------------------------------
+    - name: Read distccd environment PATH
+      ansible.builtin.shell: |
+        cat /proc/{{ distccd_pid.stdout }}/environ | tr '\0' '\n' | grep '^PATH='
+      register: distccd_path
+      changed_when: false
+
+    - name: Validate PATH
+      ansible.builtin.debug:
+        msg: "PATH OK: {{ distccd_path.stdout }}"
+      when: distccd_path.stdout == "PATH={{ expected_path }}"
+
+    - name: Report PATH mismatch
+      ansible.builtin.debug:
+        msg: "PATH MISMATCH: got '{{ distccd_path.stdout }}', expected 'PATH={{ expected_path }}'"
+      when: distccd_path.stdout != "PATH={{ expected_path }}"
+
+    # -------------------------------------------------------------------------
+    # Check gcc exists
+    # -------------------------------------------------------------------------
+    - name: Check gcc binary
+      ansible.builtin.stat:
+        path: /usr/bin/gcc
+      register: gcc_stat
+
+    - name: Fail if gcc missing
+      ansible.builtin.fail:
+        msg: "gcc missing at /usr/bin/gcc"
+      when: not gcc_stat.stat.exists
+
+    # -------------------------------------------------------------------------
+    # Check cc1 exists
+    # -------------------------------------------------------------------------
+    - name: Find cc1
+      ansible.builtin.shell: "find /usr/lib -name cc1 || true"
+      register: cc1_find
+      changed_when: false
+
+    - name: Fail if cc1 missing
+      ansible.builtin.fail:
+        msg: "cc1 not found under /usr/lib"
+      when: cc1_find.stdout == ""
+
+    # -------------------------------------------------------------------------
+    # Check distccd port
+    # -------------------------------------------------------------------------
+    - name: Check distccd listening on port 3632
+      ansible.builtin.shell: "ss -lntp | grep ':3632 ' || true"
+      register: port_check
+      changed_when: false
+
+    - name: Fail if distccd not listening
+      ansible.builtin.fail:
+        msg: "distccd NOT listening on port 3632"
+      when: port_check.stdout == ""
+
+    # -------------------------------------------------------------------------
+    # Check override file exists
+    # -------------------------------------------------------------------------
+    - name: Check override file
+      ansible.builtin.stat:
+        path: /etc/systemd/system/distccd.service.d/override.conf
+      register: override_stat
+
+    - name: Fail if override missing
+      ansible.builtin.fail:
+        msg: "override.conf missing"
+      when: not override_stat.stat.exists
+
+    # -------------------------------------------------------------------------
+    # Check ExecStart correctness
+    # -------------------------------------------------------------------------
+    - name: Validate ExecStart
+      ansible.builtin.shell: |
+        systemctl show distccd -p ExecStart | sed 's/ExecStart=//'
+      register: execstart
+      changed_when: false
+
+    - name: Report ExecStart
+      ansible.builtin.debug:
+        msg: "ExecStart: {{ execstart.stdout }}"
+

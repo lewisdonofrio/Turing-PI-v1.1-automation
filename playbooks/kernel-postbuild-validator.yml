@@ -1,0 +1,100 @@
+# /opt/ansible-k3s-cluster/playbooks/kernel-postbuild-validator.yml
+# Purpose: Validate kernel build artifacts after distributed build completes.
+# Behavior: Pure validation. No changes. Safe to run at 2am.
+# Author: Lewis Donofrio
+# Notes: Ensures vmlinuz, modules, System.map, zImage, DTS, and build logs exist.
+#        Also scans logs for fatal errors and extracts kernel version.
+
+- name: Kernel post-build validation
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    workspace: "/opt/builder/workspace/linux"
+    build_log: "/opt/builder/workspace/linux/kernel-build.log"
+    artifacts:
+      - vmlinuz
+      - System.map
+      - .config
+      - arch/arm/boot/zImage
+      - arch/arm/boot/dts
+
+  tasks:
+
+    - name: Check kernel workspace exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}"
+      register: ws
+
+    - name: Fail if workspace missing
+      ansible.builtin.fail:
+        msg: "Kernel workspace missing at {{ workspace }}"
+      when: not ws.stat.exists
+
+    - name: Validate build artifacts
+      ansible.builtin.stat:
+        path: "{{ workspace }}/{{ item }}"
+      loop: "{{ artifacts }}"
+      register: artifact_stats
+
+    - name: Report missing artifacts
+      ansible.builtin.debug:
+        msg: "MISSING: {{ item.item }}"
+      loop: "{{ artifact_stats.results }}"
+      when: not item.stat.exists
+
+    - name: Report present artifacts
+      ansible.builtin.debug:
+        msg: "OK: {{ item.item }}"
+      loop: "{{ artifact_stats.results }}"
+      when: item.stat.exists
+
+    - name: Check build log exists
+      ansible.builtin.stat:
+        path: "{{ build_log }}"
+      register: log_stat
+
+    - name: Warn if build log missing
+      ansible.builtin.debug:
+        msg: "Build log missing at {{ build_log }}"
+      when: not log_stat.stat.exists
+
+    - name: Scan build log for fatal errors
+      ansible.builtin.shell: |
+        egrep -i 'error:|fatal:|collect2: error|undefined reference' "{{ build_log }}" || true
+      args:
+        executable: /bin/bash
+      register: log_errors
+      when: log_stat.stat.exists
+      changed_when: false
+
+    - name: Report fatal-like patterns in build log
+      ansible.builtin.debug:
+        msg: "{{ log_errors.stdout_lines | default(['No fatal patterns found in build log']) }}"
+      when: log_stat.stat.exists
+
+    - name: Extract kernel version from zImage (if present)
+      ansible.builtin.shell: |
+        strings "{{ workspace }}/arch/arm/boot/zImage" | grep -m1 '^Linux version' || echo "Unable to extract version from zImage"
+      args:
+        executable: /bin/bash
+      register: image_version
+      when: "'arch/arm/boot/zImage' in artifacts"
+      changed_when: false
+
+    - name: Display kernel image version line
+      ansible.builtin.debug:
+        var: image_version.stdout_lines
+      when: image_version is defined
+
+    - name: Show running kernel version
+      ansible.builtin.shell: uname -a
+      args:
+        executable: /bin/bash
+      register: running_version
+      changed_when: false
+
+    - name: Display running kernel version
+      ansible.builtin.debug:
+        var: running_version.stdout_lines

@@ -1,0 +1,40 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-mode.yml
+# Purpose: Enter CLUSTER MODE for normal k3s operation.
+# Behavior: Starts k3s everywhere and stops distccd everywhere.
+# Author: Lewis Donofrio
+# Notes: Safe to run at 2am. Idempotent.
+
+# --- Stop distcc everywhere ---
+
+- name: Stop distccd on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop distccd
+      ansible.builtin.service:
+        name: distccd
+        state: stopped
+      ignore_errors: true
+
+- name: Stop distccd on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop distccd
+      ansible.builtin.service:
+        name: distccd
+        state: stopped
+      ignore_errors: true
+
+# --- Start k3s everywhere ---
+
+- import_playbook: cluster-mode-restore.yml
+
+- name: Report cluster mode active
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: "CLUSTER MODE active: k3s running, distcc stopped."

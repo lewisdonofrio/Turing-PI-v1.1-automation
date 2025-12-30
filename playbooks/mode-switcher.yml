@@ -1,0 +1,24 @@
+# /opt/ansible-k3s-cluster/playbooks/mode-switcher.yml
+# Purpose: Toggle between BUILD MODE and CLUSTER MODE.
+# Behavior: Detects current mode and switches accordingly.
+# Author: Lewis Donofrio
+# Notes: Safe to run at 2am. Idempotent.
+
+- name: Detect if k3s-server is running on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check k3s-server status
+      ansible.builtin.shell: systemctl is-active k3s || true
+      register: k3s_status
+      changed_when: false
+
+    - name: Switch modes based on k3s state
+      ansible.builtin.include_tasks: "{{ item }}"
+      loop:
+        - "builder-mode.yml"
+        - "cluster-mode.yml"
+      when: >
+        (k3s_status.stdout == "active" and item == "builder-mode.yml") or
+        (k3s_status.stdout != "active" and item == "cluster-mode.yml")

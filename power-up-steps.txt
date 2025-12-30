@@ -1,0 +1,15 @@
+cd /opt/ansible-k3s-cluster
+sudo -iu ansible
+
+# 1) Bootstrap distccd on all workers (persistent, correct, safe after reboot)
+ansible-playbook -i inventory/hosts playbooks/distccd-bootstrap.yml
+
+# 2) Validate distcc cluster health
+ansible-playbook -i inventory/hosts playbooks/cluster-distcc-validate.yml
+ansible-playbook -i inventory/hosts playbooks/cluster-distcc-smoketest.yml
+
+# 3) Ensure kernel .config exists (only needed once per kernel tree / after cleaning)
+ansible-playbook -i inventory/hosts playbooks/kernel-config-import.yml
+
+# 4) Run the distributed kernel build (forced env, PATH, CC/HOSTCC/HOSTCXX, -j16)
+ansible-playbook -i inventory/hosts playbooks/kernel-build.yml

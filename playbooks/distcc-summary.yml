@@ -1,0 +1,46 @@
+# /opt/ansible-k3s-cluster/playbooks/distcc-summary.yml  
+# Cluster-wide distcc readiness summary.
+# No failures. Pure reporting.
+
+- name: Distcc readiness summary
+  hosts: builder:distcc_workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Identify node role
+      ansible.builtin.debug:
+        msg: "Node {{ inventory_hostname }} role={{ group_names }}"
+
+    - name: Check distccd PID (workers only)
+      ansible.builtin.shell: "pgrep -n distccd || true"
+      register: pid
+      changed_when: false
+      when: "'distcc_workers' in group_names"
+
+    - name: Report distccd PID
+      ansible.builtin.debug:
+        msg: "distccd PID={{ pid.stdout }}"
+      when: "'distcc_workers' in group_names"
+
+    - name: Report PATH (workers)
+      ansible.builtin.shell: |
+        cat /proc/$(pgrep -n distccd)/environ | tr '\0' '\n' | grep '^PATH='
+      register: path_env
+      changed_when: false
+      when: "'distcc_workers' in group_names"
+
+    - name: PATH summary
+      ansible.builtin.debug:
+        msg: "{{ path_env.stdout }}"
+      when: "'distcc_workers' in group_names"
+
+    - name: Check gcc version
+      ansible.builtin.shell: "gcc --version | head -n 1"
+      register: gcc_ver
+      changed_when: false
+
+    - name: Report gcc version
+      ansible.builtin.debug:
+        msg: "{{ gcc_ver.stdout }}"

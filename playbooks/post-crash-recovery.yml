@@ -1,0 +1,24 @@
+# /opt/ansible-k3s-cluster/playbooks/post-crash-recovery.yml
+# Purpose: Recover builder + workers after unexpected reboot.
+
+- name: Post-crash recovery
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+
+    - name: Check uptime
+      ansible.builtin.shell: awk '{print int($1)}' /proc/uptime
+      register: uptime_seconds
+      changed_when: false
+
+    - name: Warn if uptime < 300 seconds
+      ansible.builtin.debug:
+        msg: "WARNING: System rebooted recently (uptime {{ uptime_seconds.stdout }}s). Running recovery."
+
+    - name: Kill stray compiler processes
+      ansible.builtin.shell: |
+        killall -9 cc1 cc1plus gcc g++ cpp as ld make distcc distccd || true
+      changed_when: false
+
+- import_playbook: builder-mode.yml

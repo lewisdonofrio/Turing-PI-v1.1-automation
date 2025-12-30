@@ -1,0 +1,62 @@
+# /opt/ansible-k3s-cluster/playbooks/kernel-preflight.yml 
+# Validate builder kernel build environment.
+# Ensures workspace, toolchain, config, and distcc readiness.
+
+- name: Kernel build preflight validation
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    workspace: "/opt/builder/workspace/linux"
+
+  tasks:
+
+    - name: Check kernel workspace exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}"
+      register: ws
+
+    - name: Fail if workspace missing
+      ansible.builtin.fail:
+        msg: "Kernel workspace missing at {{ workspace }}"
+      when: not ws.stat.exists
+
+    - name: Check .config exists
+      ansible.builtin.stat:
+        path: "{{ workspace }}/.config"
+      register: config_stat
+
+    - name: Fail if .config missing
+      ansible.builtin.fail:
+        msg: ".config missing in kernel workspace"
+      when: not config_stat.stat.exists
+
+    - name: Check gcc exists
+      ansible.builtin.stat:
+        path: /usr/bin/gcc
+      register: gcc_stat
+
+    - name: Fail if gcc missing
+      ansible.builtin.fail:
+        msg: "gcc missing on builder"
+      when: not gcc_stat.stat.exists
+
+    - name: Check distcc exists
+      ansible.builtin.stat:
+        path: /usr/bin/distcc
+      register: distcc_stat
+
+    - name: Fail if distcc missing
+      ansible.builtin.fail:
+        msg: "distcc missing on builder"
+      when: not distcc_stat.stat.exists
+
+    - name: Check DISTCC_HOSTS
+      ansible.builtin.shell: "echo $DISTCC_HOSTS"
+      register: hosts_env
+      changed_when: false
+
+    - name: Report DISTCC_HOSTS
+      ansible.builtin.debug:
+        msg: "DISTCC_HOSTS={{ hosts_env.stdout }}"

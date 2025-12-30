@@ -1,0 +1,34 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-mode-restore.yml
+# Purpose: Restore full cluster mode after kernel build.
+# Behavior: Starts k3s-server on builder and k3s-agent on workers.
+# Author: Lewis Donofrio
+# Notes: Safe to run at 2am. Idempotent.
+
+- name: Start k3s-server on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Start k3s-server
+      ansible.builtin.service:
+        name: k3s
+        state: started
+      ignore_errors: true
+
+- name: Start k3s-agent on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Start k3s-agent
+      ansible.builtin.service:
+        name: k3s-agent
+        state: started
+      ignore_errors: true
+
+- name: Report cluster mode restored
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: "Cluster mode restored: k3s-server and k3s-agent running."
