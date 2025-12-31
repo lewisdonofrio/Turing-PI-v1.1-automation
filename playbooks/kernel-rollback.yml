@@ -1,56 +1,140 @@
-# =============================================================================
-# File: /opt/ansible-k3s-cluster/kernel-rollback.yml
-# =============================================================================
-# Purpose:
-#   Roll back each cluster node to the most recent kernel backup created by
-#   kernel-backup.yml. This restores:
-#     - /boot
-#     - /lib/modules/<version>
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-rollback.yml
 #
-# Usage:
-#   ansible-playbook \
-#     -i /opt/ansible-k3s-cluster/inventory/hosts \
-#     /opt/ansible-k3s-cluster/kernel-rollback.yml
+#  Purpose:
+#    Roll back cluster nodes to a previous kernel using one of two
+#    supported rollback sources:
 #
-# Notes:
-#   - Expects backups under /var/backups/kernel-<timestamp>.
-#   - Prompts for the backup directory to restore from.
-# =============================================================================
+#      1. Pacman cache rollback (automatic)
+#         - Uses cached kernel packages under /var/cache/pacman/pkg
+#
+#      2. Backup directory rollback (manual)
+#         - Uses backups created by kernel-backup.yml
+#         - Restores /boot and /lib/modules from a chosen backup dir
+#
+#    Supports staged rollback (worker7 first, then remaining nodes).
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - No tabs, no Unicode, no timestamps.
+#    - Safe to run on any subset of nodes.
+# =====================================================================
 
 ---
-- hosts: k3s_cluster
+- hosts: kernel_targets
   become: yes
+  gather_facts: false
 
+  # ---------------------------------------------------------------
+  # PROMPT FOR ROLLBACK MODE (unconditional)
+  # ---------------------------------------------------------------
   vars_prompt:
-    - name: rollback_dir
-      prompt: "Enter full path to kernel backup directory (e.g. /var/backups/kernel-20251227-0200)"
+    - name: rollback_mode
+      prompt: |
+        Select rollback mode:
+          1 = Pacman cache rollback (automatic)
+          2 = Backup directory rollback (manual)
+        Enter 1 or 2
       private: no
 
+  vars:
+    pacman_cache: "/var/cache/pacman/pkg"
+    boot_dir: "/boot"
+    modules_dir: "/usr/lib/modules"
+
   tasks:
-    - name: Validate rollback directory exists
-      stat:
+
+    # ---------------------------------------------------------------
+    # VALIDATION & CONDITIONAL PROMPT FOR rollback_dir
+    # ---------------------------------------------------------------
+
+    - name: Validate rollback_mode is 1 or 2
+      ansible.builtin.fail:
+        msg: "rollback_mode must be 1 or 2"
+      when: rollback_mode not in ['1', '2']
+
+    - name: Prompt for rollback_dir only when mode 2 and not provided
+      ansible.builtin.pause:
+        prompt: "Enter full path to kernel backup directory"
+      register: rollback_dir_prompt
+      when:
+        - rollback_mode == '2'
+        - rollback_dir is not defined
+
+    - name: Set rollback_dir from prompt
+      ansible.builtin.set_fact:
+        rollback_dir: "{{ rollback_dir_prompt.user_input }}"
+      when:
+        - rollback_mode == '2'
+        - rollback_dir is not defined
+
+    - name: Validate rollback_dir exists when mode 2
+      ansible.builtin.stat:
         path: "{{ rollback_dir }}"
       register: rollback_stat
+      when: rollback_mode == '2'
 
-    - name: Abort if rollback directory is missing
-      fail:
+    - name: Abort if rollback directory is missing (mode 2)
+      ansible.builtin.fail:
         msg: "Rollback directory {{ rollback_dir }} does not exist."
-      when: not rollback_stat.stat.exists
+      when:
+        - rollback_mode == '2'
+        - not rollback_stat.stat.exists
 
-    - name: Restore /boot
-      synchronize:
+    # ---------------------------------------------------------------
+    # MODE 1: PACMAN CACHE ROLLBACK
+    # ---------------------------------------------------------------
+    - name: Find cached kernel packages (mode 1)
+      ansible.builtin.find:
+        paths: "{{ pacman_cache }}"
+        patterns: "linux-*.pkg.tar.zst"
+      register: cached_pkgs
+      when: rollback_mode == "1"
+
+    - name: Fail if no cached kernel packages found (mode 1)
+      ansible.builtin.fail:
+        msg: "No cached kernel packages found in {{ pacman_cache }}."
+      when:
+        - rollback_mode == "1"
+        - cached_pkgs.files | length == 0
+
+    - name: Install previous kernel package(s) from pacman cache (mode 1)
+      ansible.builtin.package:
+        name: "{{ item.path }}"
+        state: present
+      loop: "{{ cached_pkgs.files }}"
+      when: rollback_mode == "1"
+
+    # ---------------------------------------------------------------
+    # MODE 2: BACKUP DIRECTORY ROLLBACK
+    # ---------------------------------------------------------------
+    - name: Restore /boot from backup (mode 2)
+      ansible.builtin.synchronize:
         src: "{{ rollback_dir }}/boot/"
-        dest: /boot/
+        dest: "{{ boot_dir }}/"
         recursive: yes
         delete: yes
+      when: rollback_mode == "2"
 
-    - name: Restore /lib/modules
-      synchronize:
+    - name: Restore /lib/modules from backup (mode 2)
+      ansible.builtin.synchronize:
         src: "{{ rollback_dir }}/modules/"
-        dest: /lib/modules/
+        dest: "{{ modules_dir }}/"
         recursive: yes
         delete: yes
+      when: rollback_mode == "2"
+
+    # ---------------------------------------------------------------
+    # COMMON: REBOOT + SUMMARY
+    # ---------------------------------------------------------------
+    - name: Reboot node after rollback
+      ansible.builtin.reboot:
+        msg: "Rebooting after kernel rollback"
+      when: kernel_reboot_after_rollback | default(true) | bool
 
     - name: Display rollback confirmation
-      debug:
-        msg: "Kernel rollback completed using {{ rollback_dir }}"
+      ansible.builtin.debug:
+        msg: >
+          Kernel rollback completed on {{ inventory_hostname }}
+          using mode {{ rollback_mode }}
+          {{ rollback_mode == "2" | ternary("from " + rollback_dir, "from pacman cache") }}

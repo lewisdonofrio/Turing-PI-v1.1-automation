@@ -1,0 +1,121 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-health.yml
+#
+#  Purpose:
+#    Verify that target nodes successfully booted into the newly
+#    installed kernel. Checks kernel version, module directory,
+#    DTB presence, dmesg for critical errors, and optional k3s status.
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - No tabs, no Unicode, no timestamps.
+#    - Designed to run after kernel-deploy.yml.
+# =====================================================================
+
+- name: Kernel health verification
+  hosts: kernel_targets
+  gather_facts: false
+  become: true
+
+  vars:
+    module_dir: "/usr/lib/modules"
+    boot_dir: "/boot"
+
+  tasks:
+
+    # ---------------------------------------------------------------
+    # 1. Verify SSH connectivity (implicit by running tasks)
+    # ---------------------------------------------------------------
+
+    - name: Display node being checked
+      ansible.builtin.debug:
+        msg: "Checking kernel health on {{ inventory_hostname }}"
+
+    # ---------------------------------------------------------------
+    # 2. Kernel version check
+    # ---------------------------------------------------------------
+
+    - name: Get kernel version
+      ansible.builtin.command:
+        cmd: uname -a
+      register: uname_output
+      changed_when: false
+
+    - name: Show kernel version
+      ansible.builtin.debug:
+        msg: "{{ uname_output.stdout }}"
+
+    # ---------------------------------------------------------------
+    # 3. Module directory check
+    # ---------------------------------------------------------------
+
+    - name: List module directories
+      ansible.builtin.find:
+        paths: "{{ module_dir }}"
+        file_type: directory
+        depth: 1
+      register: module_dirs
+
+    - name: Show module directories
+      ansible.builtin.debug:
+        msg: "{{ module_dirs.files | map(attribute='path') | list }}"
+
+    # ---------------------------------------------------------------
+    # 4. DTB presence check
+    # ---------------------------------------------------------------
+
+    - name: Find DTBs in /boot
+      ansible.builtin.find:
+        paths: "{{ boot_dir }}"
+        patterns: "*.dtb"
+      register: dtb_files
+
+    - name: Show DTB files
+      ansible.builtin.debug:
+        msg: "{{ dtb_files.files | map(attribute='path') | list }}"
+
+    # ---------------------------------------------------------------
+    # 5. dmesg scan for critical errors
+    # ---------------------------------------------------------------
+
+    - name: Scan dmesg for errors
+      ansible.builtin.command:
+        cmd: dmesg
+      register: dmesg_output
+      changed_when: false
+
+    - name: Filter dmesg for critical patterns
+      ansible.builtin.set_fact:
+        dmesg_critical: >-
+          {{ dmesg_output.stdout_lines
+             | select('search', 'error|fail|panic')
+             | list }}
+
+    - name: Show critical dmesg lines (if any)
+      ansible.builtin.debug:
+        msg: "{{ dmesg_critical }}"
+      when: dmesg_critical | length > 0
+
+    # ---------------------------------------------------------------
+    # 6. Optional: k3s status
+    # ---------------------------------------------------------------
+
+    - name: Check k3s service status
+      ansible.builtin.service_facts:
+
+    - name: Show k3s status
+      ansible.builtin.debug:
+        msg: "k3s status: {{ ansible_facts.services['k3s.service'].state | default('not installed') }}"
+
+    # ---------------------------------------------------------------
+    # 7. Summary
+    # ---------------------------------------------------------------
+
+    - name: Health check summary
+      ansible.builtin.debug:
+        msg:
+          - "Kernel health check complete for {{ inventory_hostname }}"
+          - "Kernel version: {{ uname_output.stdout }}"
+          - "Module dirs: {{ module_dirs.files | map(attribute='path') | list }}"
+          - "DTBs: {{ dtb_files.files | map(attribute='path') | list }}"
+          - "Critical dmesg lines: {{ dmesg_critical | default([]) }}"

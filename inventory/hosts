@@ -1,3 +1,17 @@
+[kernel_sandbox]
+kubenode7.home.lab
+
+[kernel_production]
+kubenode1.home.lab
+kubenode2.home.lab
+kubenode3.home.lab
+kubenode4.home.lab
+kubenode5.home.lab
+kubenode6.home.lab
+
+[kernel_targets:children]
+kernel_sandbox
+kernel_production
 
 [k3s_cluster]
 kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519

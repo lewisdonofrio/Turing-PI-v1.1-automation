@@ -1,16 +1,21 @@
----
 # =============================================================================
 # File: /opt/ansible-k3s-cluster/cluster-build-monitor.yml
 # Description: Cluster-wide real-time monitoring for distributed builds.
 #              Shows CPU load, memory usage, distccd status, distcc job activity,
-#              network throughput, uptime, and temperature.
-# Usage: Run with:
-#        watch -n 60 ansible-playbook -i inventory/hosts.ini cluster-build-monitor.yml
+#              pump-mode include-server status, network throughput, uptime,
+#              and temperature.
+# Usage:
+#   Normal: watch -n 60 ansible-playbook -i inventory/hosts.ini cluster-build-monitor.yml
+#   Debug:  watch -n 60 ansible-playbook -i inventory/hosts.ini cluster-build-monitor.yml -e monitor_debug=true -vvv
 # =============================================================================
 
 - name: Cluster Build Monitor
   hosts: k3s_cluster
   gather_facts: false
+
+  vars:
+    monitor_debug: false
+    ansible_stdout_callback: "{{ 'default' if monitor_debug else 'minimal' }}"
 
   tasks:
 
@@ -37,16 +42,37 @@
         msg: "{{ mem.stdout }}"
 
     # -------------------------------------------------------------------------
-    # distccd Service Status
+    # distccd Service Status (skip builder)
     # -------------------------------------------------------------------------
     - name: Check distccd service
       command: systemctl is-active distccd
       register: distccd_status
       ignore_errors: true
+      when: inventory_hostname != "kubenode1.home.lab"
 
     - name: Report distccd status
       debug:
-        msg: "distccd: {{ distccd_status.stdout | default('unknown') }}"
+        msg: "distccd: {{ distccd_status.stdout | default('inactive') }}"
+      when: inventory_hostname != "kubenode1.home.lab"
+
+    - name: Report distccd status (builder skipped)
+      debug:
+        msg: "distccd: skipped (builder node)"
+      when: inventory_hostname == "kubenode1.home.lab"
+
+    # -------------------------------------------------------------------------
+    # Pump Mode (include-server) Status — builder only
+    # -------------------------------------------------------------------------
+    - name: Check include-server (pump mode)
+      command: pgrep -a include-server
+      register: include_server
+      ignore_errors: true
+      when: inventory_hostname == "kubenode1.home.lab"
+
+    - name: Report include-server status
+      debug:
+        msg: "pump include-server: {{ include_server.stdout | default('not running') }}"
+      when: inventory_hostname == "kubenode1.home.lab"
 
     # -------------------------------------------------------------------------
     # distcc Job Activity

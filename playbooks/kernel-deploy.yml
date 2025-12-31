@@ -1,0 +1,95 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-deploy.yml
+#
+#  Purpose:
+#    Deploy the newly built kernel packages from the builder node to
+#    selected cluster nodes using only Ansible modules. Supports staged
+#    rollout (e.g., worker7 first, then remaining nodes).
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - No tabs, no Unicode, no timestamps.
+#    - Requires kernel-build.yml to have been run first.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+#  Phase 1: Gather kernel packages from builder
+# ---------------------------------------------------------------------
+
+- name: Gather kernel packages from builder
+  hosts: builder
+  gather_facts: false
+  become: false
+
+  vars:
+    pkgout_dir: "/home/builder/pkgout"
+
+  tasks:
+
+    - name: Find kernel packages on builder
+      ansible.builtin.find:
+        paths: "{{ pkgout_dir }}"
+        patterns: "*.pkg.tar.zst"
+      register: kernel_pkgs
+
+    - name: Fail if no kernel packages found
+      ansible.builtin.fail:
+        msg: "No kernel packages found in {{ pkgout_dir }}. Run kernel-build.yml first."
+      when: kernel_pkgs.files | length == 0
+
+    - name: Set fact for package list
+      ansible.builtin.set_fact:
+        kernel_package_list: "{{ kernel_pkgs.files | map(attribute='path') | list }}"
+
+    - name: Display package summary
+      ansible.builtin.debug:
+        msg:
+          - "Kernel packages discovered on builder:"
+          - "{{ kernel_package_list }}"
+
+# ---------------------------------------------------------------------
+#  Phase 2: Deploy kernel packages to target nodes
+# ---------------------------------------------------------------------
+
+- name: Deploy kernel packages to target nodes
+  hosts: kernel_targets
+  gather_facts: false
+  become: true
+
+  vars:
+    pkgout_dir: "/home/builder/pkgout"
+    builder_host: "kubenode1.home.lab"
+
+  tasks:
+
+    - name: Ensure pkgout directory exists on target
+      ansible.builtin.file:
+        path: "{{ pkgout_dir }}"
+        state: directory
+        owner: builder
+        group: builder
+        mode: "0755"
+
+    - name: Copy kernel packages to target
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ pkgout_dir }}/"
+        owner: builder
+        group: builder
+        mode: "0644"
+      loop: "{{ hostvars[builder_host].kernel_package_list }}"
+
+    - name: Install kernel packages
+      ansible.builtin.package:
+        name: "{{ pkgout_dir }}/{{ item | basename }}"
+        state: present
+      loop: "{{ hostvars[builder_host].kernel_package_list }}"
+
+    - name: Reboot node after kernel install
+      ansible.builtin.reboot:
+        msg: "Rebooting after kernel upgrade"
+      when: kernel_reboot_after_deploy | default(false) | bool
+
+    - name: Report deployment completion
+      ansible.builtin.debug:
+        msg: "Kernel deployed to {{ inventory_hostname }}"

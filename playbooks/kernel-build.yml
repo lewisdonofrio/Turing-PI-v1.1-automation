@@ -1,21 +1,44 @@
-# /opt/ansible-k3s-cluster/playbooks/kernel-build.yml
-# Purpose: Distributed kernel build on native ARMv7 (CM3+)
-# Notes:
-#   - Native Arch ARM toolchain (no prefix)
-#   - Distcc wraps gcc/g++
-#   - Binutils are native (ld, as, objcopy, objdump)
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-build.yml
+#
+#  Purpose:
+#    Perform a distributed kernel build on the builder node (CM3+),
+#    using native ARMv7 toolchain and distcc acceleration. After the
+#    build completes, organize artifacts and register kernel packages
+#    for deployment to worker nodes.
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - No tabs, no Unicode, no timestamps.
+#    - Uses Ansible modules wherever possible.
+#    - Only the kernel build step uses a command task.
+# =====================================================================
 
-- name: Distributed kernel build (builder-only)
+- name: Distributed kernel build on builder
   hosts: builder
   become: true
   gather_facts: false
 
+
   vars:
-    distcc_hosts: "kubenode2.home.lab kubenode3.home.lab kubenode4.home.lab kubenode5.home.lab kubenode6.home.lab kubenode7.home.lab"
-    workspace: "/home/builder/linux-rpi-k3s/kernel"
-    build_log: "/home/builder/linux-rpi-k3s/kernel/kernel-build.log"
+    workspace: "/home/builder/src/kernel"
+    build_log: "/home/builder/src/kernel/kernel-build.log"
+    scripts_dir: "/home/builder/scripts"
+    pkgout_dir: "/home/builder/pkgout"
+    artifacts_dir: "/home/builder/artifacts/kernel"
+    distcc_hosts: >
+      kubenode2.home.lab
+      kubenode3.home.lab
+      kubenode4.home.lab
+      kubenode5.home.lab
+      kubenode6.home.lab
+      kubenode7.home.lab
 
   tasks:
+
+    # ---------------------------------------------------------------
+    # Workspace validation
+    # ---------------------------------------------------------------
 
     - name: Ensure kernel workspace exists
       ansible.builtin.stat:
@@ -37,39 +60,80 @@
         msg: ".config missing in kernel workspace"
       when: not config_stat.stat.exists
 
+    # ---------------------------------------------------------------
+    # Ensure output directories exist (module-based)
+    # ---------------------------------------------------------------
+
+    - name: Ensure pkgout directory exists
+      ansible.builtin.file:
+        path: "{{ pkgout_dir }}"
+        state: directory
+        owner: builder
+        group: builder
+        mode: "0755"
+
+    - name: Ensure artifacts directory exists
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        owner: builder
+        group: builder
+        mode: "0755"
+
+    # ---------------------------------------------------------------
+    # Distributed kernel build (shell required)
+    # ---------------------------------------------------------------
+
     - name: Run distributed kernel build (native ARMv7 + distcc)
-      ansible.builtin.shell: |
-        set -e
-        cd "{{ workspace }}"
-
-        echo "=== FORCING DISTCC ENVIRONMENT (NATIVE ARMV7) ==="
-
-        # Distcc wrapper directory first
-        export PATH="/usr/lib/distcc/bin:/usr/bin:/usr/sbin:/sbin:/bin"
-
-        # Native ARMv7 build
-        export ARCH=arm
-        export CROSS_COMPILE=""
-
-        # Distcc cluster
-        export DISTCC_HOSTS="{{ distcc_hosts }}"
-
-        # Force gcc/g++ through distcc
-        export CC="distcc gcc"
-        export HOSTCC="distcc gcc"
-        export HOSTCXX="distcc g++"
-
-        echo "PATH=$PATH"
-        echo "CROSS_COMPILE=$CROSS_COMPILE"
-        echo "DISTCC_HOSTS=$DISTCC_HOSTS"
-
-        echo "=== STARTING DISTRIBUTED KERNEL BUILD ==="
-        make -j16 2>&1 | tee "{{ build_log }}"
-      args:
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: >
+          bash -c "
+          set -e;
+          cd {{ workspace }};
+          export PATH=/usr/lib/distcc/bin:/usr/bin:/usr/sbin:/sbin:/bin;
+          export ARCH=arm;
+          export CROSS_COMPILE=;
+          export DISTCC_HOSTS='{{ distcc_hosts }}';
+          export CC='distcc gcc';
+          export HOSTCC='distcc gcc';
+          export HOSTCXX='distcc g++';
+          make -j24 2>&1 | tee {{ build_log }}
+          "
       register: build_output
       changed_when: true
 
+    # ---------------------------------------------------------------
+    # Artifact organization
+    # ---------------------------------------------------------------
+
+    - name: Organize kernel artifacts
+      ansible.builtin.command:
+        cmd: "{{ scripts_dir }}/kernel-artifact-organizer.sh"
+      register: artifact_output
+      changed_when: true
+
+    # ---------------------------------------------------------------
+    # Package discovery
+    # ---------------------------------------------------------------
+
+    - name: Find kernel packages
+      ansible.builtin.find:
+        paths: "{{ pkgout_dir }}"
+        patterns: "*.pkg.tar.zst"
+      register: kernel_packages
+
+    - name: Register kernel package list
+      ansible.builtin.set_fact:
+        kernel_package_list: "{{ kernel_packages.files | map(attribute='path') | list }}"
+
+    # ---------------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------------
+
     - name: Report build completion
       ansible.builtin.debug:
-        msg: "Kernel build completed. Log saved to {{ build_log }}"
+        msg:
+          - "Kernel build completed."
+          - "Build log: {{ build_log }}"
+          - "Packages found: {{ kernel_package_list | length }}"
+          - "Artifacts stored under: {{ artifacts_dir }}"
