@@ -97,7 +97,7 @@
           export CC='distcc gcc';
           export HOSTCC='distcc gcc';
           export HOSTCXX='distcc g++';
-          make -j24 2>&1 | tee {{ build_log }}
+          make -j14 2>&1 | tee {{ build_log }}
           "
       register: build_output
       changed_when: true

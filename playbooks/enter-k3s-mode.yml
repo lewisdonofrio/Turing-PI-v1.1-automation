@@ -1,0 +1,29 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/playbooks/enter-k3s-mode.yml
+# =============================================================================
+# Purpose:
+#   Unified wrapper to enter K3S MODE (normal cluster operation).
+#   Performs mode restore, validation, and final status reporting.
+#
+# Behavior:
+#   - Stops distccd on workers
+#   - Disables distccd on workers
+#   - Unmounts tmpfs on builder
+#   - Starts k3s-agent on workers
+#   - Starts k3s-server on builder
+#   - Validates k3s subsystem
+#
+# Notes:
+#   Safe to run at any time. ASCII-only. Idempotent.
+# =============================================================================
+
+- import_playbook: cluster-mode-restore.yml
+
+- import_playbook: k3s-validate.yml
+
+- name: Report K3S MODE active
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: "K3S MODE active: distccd stopped, tmpfs unmounted, k3s services running."

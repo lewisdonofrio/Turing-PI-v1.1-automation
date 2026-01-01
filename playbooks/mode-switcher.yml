@@ -1,24 +1,39 @@
 # /opt/ansible-k3s-cluster/playbooks/mode-switcher.yml
-# Purpose: Toggle between BUILD MODE and CLUSTER MODE.
-# Behavior: Detects current mode and switches accordingly.
+# Purpose: Automatically switch between BUILD MODE and CLUSTER MODE.
+# Behavior: Detects current mode on builder node and imports the correct playbook.
 # Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent.
+# Notes: Safe to run at 2am. Idempotent. ASCII-only.
 
-- name: Detect if k3s-server is running on builder
+- name: Detect current mode on builder
   hosts: builder
   become: true
   gather_facts: false
   tasks:
-    - name: Check k3s-server status
-      ansible.builtin.shell: systemctl is-active k3s || true
+    - name: Check if k3s-server is active
+      ansible.builtin.command: systemctl is-active k3s
       register: k3s_status
-      changed_when: false
+      failed_when: false
 
-    - name: Switch modes based on k3s state
-      ansible.builtin.include_tasks: "{{ item }}"
-      loop:
-        - "builder-mode.yml"
-        - "cluster-mode.yml"
-      when: >
-        (k3s_status.stdout == "active" and item == "builder-mode.yml") or
-        (k3s_status.stdout != "active" and item == "cluster-mode.yml")
+    - name: Set mode fact
+      ansible.builtin.set_fact:
+        current_mode: "{{ 'cluster' if k3s_status.stdout == 'active' else 'builder' }}"
+
+    - name: Report detected mode
+      ansible.builtin.debug:
+        msg: "Detected mode: {{ current_mode }}"
+
+- name: Switch to builder mode if needed
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - name: Import builder-mode.yml
+      ansible.builtin.import_playbook: builder-mode.yml
+      when: current_mode == 'cluster'
+
+- name: Switch to cluster mode if needed
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - name: Import cluster-mode.yml
+      ansible.builtin.import_playbook: cluster-mode.yml
+      when: current_mode == 'builder'

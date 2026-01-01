@@ -47,9 +47,22 @@
         - armv7l-unknown-linux-gnueabihf-gcc
         - armv7l-unknown-linux-gnueabihf-g++
 
+    - name: Ensure distccd log directory exists
+      ansible.builtin.file:
+        path: /var/log/distccd
+        state: directory
+        mode: "0755"
+
+    - name: Ensure distccd runtime directory exists
+      ansible.builtin.file:
+        path: /run/distccd
+        state: directory
+        mode: "0755"
+
     - name: Install systemd override for distccd
       ansible.builtin.copy:
         dest: /etc/systemd/system/distccd.service.d/override.conf
+        mode: "0644"
         content: |
           [Service]
           ExecStart=

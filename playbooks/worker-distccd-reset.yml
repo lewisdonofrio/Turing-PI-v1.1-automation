@@ -1,10 +1,8 @@
 # /opt/ansible-k3s-cluster/playbooks/worker-distccd-reset.yml
 # Purpose: Reset distccd on all workers to avoid stale states.
+# Behavior: Stops k3s-agent, kills stale processes, enforces systemd override, restarts distccd.
 # Author: Lewis Donofrio
-# Notes:
-#   - Ensures workers start with clean distccd and no stuck cc1.
-#   - Applies systemd override if needed.
-#   - Safe to run at any time. ASCII-only.
+# Notes: Safe to run at any time. ASCII-only. Idempotent.
 
 - name: Reset distccd on workers
   hosts: workers
@@ -13,10 +11,21 @@
 
   tasks:
 
+    - name: Stop k3s-agent
+      ansible.builtin.service:
+        name: k3s-agent
+        state: stopped
+      failed_when: false
+
+    - name: Disable k3s-agent
+      ansible.builtin.command: systemctl disable k3s-agent
+      failed_when: false
+
     - name: Stop distccd service
       ansible.builtin.systemd:
         name: distccd
         state: stopped
+      failed_when: false
 
     - name: Kill any leftover distccd processes
       ansible.builtin.shell: |
@@ -43,17 +52,24 @@
         content: |
           [Service]
           ExecStart=
-          ExecStart=/usr/bin/distccd --no-detach --allow 192.168.29.0/24 --jobs 6 --log-file /var/log/distccd/distccd.log --pid-file /run/distccd/distccd.pid
+          ExecStart=/usr/bin/distccd --no-detach \
+            --allow 192.168.29.0/24 \
+            --jobs 6 \
+            --log-file /var/log/distccd/distccd.log \
+            --pid-file /run/distccd/distccd.pid
 
     - name: Reload systemd daemon
       ansible.builtin.systemd:
         daemon_reload: true
 
+    - name: Enable distccd service
+      ansible.builtin.command: systemctl enable distccd
+      failed_when: false
+
     - name: Start distccd service
       ansible.builtin.systemd:
         name: distccd
         state: started
-        enabled: true
 
     - name: Confirm worker distccd state
       ansible.builtin.shell: |

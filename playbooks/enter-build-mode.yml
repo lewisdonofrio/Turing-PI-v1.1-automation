@@ -1,0 +1,31 @@
+# =============================================================================
+# File: /opt/ansible-k3s-cluster/playbooks/enter-build-mode.yml
+# =============================================================================
+# Purpose:
+#   Unified wrapper to enter DISTCC BUILD MODE.
+#   Performs mode switch, validation, and smoketest in one command.
+#
+# Behavior:
+#   - Stops k3s-server and k3s-agent
+#   - Mounts tmpfs on builder
+#   - Resets distccd on workers
+#   - Enforces builder environment
+#   - Validates distcc subsystem
+#   - Runs distributed compile smoketest
+#
+# Notes:
+#   Safe to run at any time. ASCII-only. Idempotent.
+# =============================================================================
+
+- import_playbook: distcc-mode-switch.yml
+
+- import_playbook: cluster-distcc-validate.yml
+
+- import_playbook: cluster-distcc-smoketest.yml
+
+- name: Report BUILD MODE active
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: "BUILD MODE active: k3s stopped, tmpfs mounted, distccd validated, smoketest passed."

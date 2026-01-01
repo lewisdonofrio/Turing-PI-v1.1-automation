@@ -1,29 +1,47 @@
-# =============================================================================
-# File: /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
-# =============================================================================
-# Purpose:
-#   Validate distcc readiness across all cluster nodes. This ensures:
-#     - distccd is installed and running
-#     - distccd is listening on the correct port
-#     - gcc versions match across nodes
-#     - PATH and toolchain are correct
-#     - MTU and network connectivity are healthy
-#     - builder can distribute jobs to nodes
-#
-# Usage:
-#   ansible-playbook \
-#     -i /opt/ansible-k3s-cluster/inventory/hosts \
-#     /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
-#
-# Notes:
-#   - This is the FIRST playbook to run before any distributed build.
-#   - All checks are read-only and safe.
-# =============================================================================
+# /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
+# Purpose: Validate distcc readiness across builder and workers.
+# Behavior: Read-only checks for distccd, symlinks, override, gcc, PATH, MTU, FQDN, and dry-run.
+# Author: Lewis Donofrio
+# Notes: Safe to run at any time. ASCII-only. Idempotent.
 
 ---
-- hosts: k3s_cluster
-  become: yes
-  gather_facts: no
+
+# =============================================================================
+# Builder validation
+# =============================================================================
+- name: Validate builder state
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check distccd state on builder
+      ansible.builtin.command: systemctl is-active distccd
+      register: builder_distccd
+      failed_when: false
+
+    - name: Check tmpfs mount state
+      ansible.builtin.command: systemctl is-active 'tmp-kernel\x2dbuild.mount'
+      register: builder_tmpfs
+      failed_when: false
+
+    - name: Report builder state
+      ansible.builtin.debug:
+        msg:
+          - "Builder distccd active: {{ builder_distccd.stdout }}"
+          - "Builder tmpfs mount active: {{ builder_tmpfs.stdout }}"
+
+# =============================================================================
+# Worker validation
+# =============================================================================
+- name: Validate worker distcc state
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    distcc_bin_dir: "/usr/lib/distcc"
 
   tasks:
 
@@ -31,80 +49,113 @@
     # Basic connectivity
     # -------------------------------------------------------------------------
     - name: Validate SSH connectivity
-      ping:
+      ansible.builtin.ping:
 
     # -------------------------------------------------------------------------
     # distccd service checks
     # -------------------------------------------------------------------------
     - name: Check distccd service status
-      shell: systemctl is-active distccd || true
+      ansible.builtin.command: systemctl is-active distccd
       register: distccd_status
+      failed_when: false
 
     - name: Report distccd service status
-      debug:
+      ansible.builtin.debug:
         msg: "distccd status: {{ distccd_status.stdout }}"
 
     - name: Check if distccd is listening on port 3632
-      shell: ss -lntp | grep 3632 || true
+      ansible.builtin.shell: ss -lntp | grep 3632 || true
       register: distccd_listen
 
     - name: Report distccd listening state
-      debug:
+      ansible.builtin.debug:
         msg: "distccd listening: {{ distccd_listen.stdout }}"
 
     # -------------------------------------------------------------------------
     # Toolchain checks
     # -------------------------------------------------------------------------
     - name: Check gcc version
-      shell: gcc --version | head -n 1
+      ansible.builtin.shell: gcc --version | head -n 1
       register: gcc_version
 
     - name: Report gcc version
-      debug:
+      ansible.builtin.debug:
         msg: "gcc version: {{ gcc_version.stdout }}"
 
-    - name: Check distcc binary
-      shell: which distcc || true
+    - name: Check distcc binary path
+      ansible.builtin.shell: which distcc || true
       register: distcc_path
 
     - name: Report distcc binary path
-      debug:
+      ansible.builtin.debug:
         msg: "distcc path: {{ distcc_path.stdout }}"
 
     - name: Check PATH for gcc and distcc
-      shell: echo $PATH
+      ansible.builtin.shell: echo $PATH
       register: path_out
 
     - name: Report PATH
-      debug:
+      ansible.builtin.debug:
         msg: "PATH: {{ path_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Symlink + override checks
+    # -------------------------------------------------------------------------
+    - name: Check distcc symlink directory exists
+      ansible.builtin.stat:
+        path: "{{ distcc_bin_dir }}"
+      register: bin_dir
+
+    - name: Check distcc symlinks
+      ansible.builtin.stat:
+        path: "{{ distcc_bin_dir }}/{{ item }}"
+      loop:
+        - gcc
+        - g++
+        - cc
+        - c++
+        - armv7l-unknown-linux-gnueabihf-gcc
+        - armv7l-unknown-linux-gnueabihf-g++
+      register: symlink_checks
+
+    - name: Check override.conf exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/distccd.service.d/override.conf
+      register: override_file
+
+    - name: Report symlink + override state
+      ansible.builtin.debug:
+        msg:
+          - "distcc bin dir present: {{ bin_dir.stat.exists }}"
+          - "override.conf present: {{ override_file.stat.exists }}"
+          - "symlink results: {{ symlink_checks.results | map(attribute='stat.exists') | list }}"
 
     # -------------------------------------------------------------------------
     # Network checks
     # -------------------------------------------------------------------------
     - name: Show MTU for all interfaces
-      shell: ip link | grep mtu
+      ansible.builtin.shell: ip link | grep mtu
       register: mtu_out
 
     - name: Report MTU
-      debug:
+      ansible.builtin.debug:
         msg: "MTU: {{ mtu_out.stdout }}"
 
     - name: Check hostname and FQDN
-      shell: hostname -f
+      ansible.builtin.shell: hostname -f
       register: fqdn_out
 
     - name: Report FQDN
-      debug:
+      ansible.builtin.debug:
         msg: "FQDN: {{ fqdn_out.stdout }}"
 
     # -------------------------------------------------------------------------
     # Optional: distcc dry-run test
     # -------------------------------------------------------------------------
     - name: Run distcc dry-run test
-      shell: distcc -j 4 true || true
+      ansible.builtin.shell: distcc -j 4 true || true
       register: distcc_dryrun
 
     - name: Report distcc dry-run
-      debug:
+      ansible.builtin.debug:
         msg: "distcc dry-run: {{ distcc_dryrun.stdout }}"

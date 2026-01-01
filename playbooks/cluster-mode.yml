@@ -1,40 +1,64 @@
 # /opt/ansible-k3s-cluster/playbooks/cluster-mode.yml
 # Purpose: Enter CLUSTER MODE for normal k3s operation.
-# Behavior: Starts k3s everywhere and stops distccd everywhere.
+# Behavior: Stops distccd, disables tmpfs mount, restores k3s services.
 # Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent.
+# Notes: Safe to run at 2am. Idempotent. ASCII-only.
 
-# --- Stop distcc everywhere ---
+- name: Stop distccd on all nodes
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop distccd service
+      ansible.builtin.service:
+        name: distccd
+        state: stopped
+      failed_when: false
 
-- name: Stop distccd on builder
+    - name: Disable distccd service
+      ansible.builtin.command: systemctl disable distccd
+      failed_when: false
+
+# --- tmpfs teardown (builder only) ---
+- name: Disable tmpfs mount for kernel builds
   hosts: builder
   become: true
   gather_facts: false
   tasks:
-    - name: Stop distccd
-      ansible.builtin.service:
-        name: distccd
-        state: stopped
-      ignore_errors: true
+    - name: Stop tmpfs mount unit
+      ansible.builtin.command: systemctl stop 'tmp-kernel\x2dbuild.mount'
+      failed_when: false
 
-- name: Stop distccd on workers
+    - name: Disable tmpfs mount unit
+      ansible.builtin.command: systemctl disable 'tmp-kernel\x2dbuild.mount'
+      failed_when: false
+
+# --- k3s restore ---
+- name: Start k3s-server on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Start k3s-server
+      ansible.builtin.service:
+        name: k3s
+        state: started
+      failed_when: false
+
+- name: Start k3s-agent on workers
   hosts: workers
   become: true
   gather_facts: false
   tasks:
-    - name: Stop distccd
+    - name: Start k3s-agent
       ansible.builtin.service:
-        name: distccd
-        state: stopped
-      ignore_errors: true
-
-# --- Start k3s everywhere ---
-
-- import_playbook: cluster-mode-restore.yml
+        name: k3s-agent
+        state: started
+      failed_when: false
 
 - name: Report cluster mode active
   hosts: builder
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "CLUSTER MODE active: k3s running, distcc stopped."
+        msg: "CLUSTER MODE active: distccd stopped, tmpfs disabled, k3s restored."

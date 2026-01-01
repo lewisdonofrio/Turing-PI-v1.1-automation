@@ -1,10 +1,40 @@
 # /opt/ansible-k3s-cluster/playbooks/cluster-mode-restore.yml
-# Purpose: Restore full cluster mode after kernel build.
-# Behavior: Starts k3s-server on builder and k3s-agent on workers.
+# Purpose: Force CLUSTER MODE after partial or failed transitions.
+# Behavior: Stops distccd, disables tmpfs mount, restores all k3s services.
 # Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent.
+# Notes: Safe to run at 2am. Idempotent. ASCII-only.
 
-- name: Start k3s-server on builder
+- name: Stop distccd on all nodes
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop distccd service
+      ansible.builtin.service:
+        name: distccd
+        state: stopped
+      failed_when: false
+
+    - name: Disable distccd service
+      ansible.builtin.command: systemctl disable distccd
+      failed_when: false
+
+# --- tmpfs teardown (builder only) ---
+- name: Disable tmpfs mount for kernel builds
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop tmpfs mount unit
+      ansible.builtin.command: systemctl stop 'tmp-kernel\x2dbuild.mount'
+      failed_when: false
+
+    - name: Disable tmpfs mount unit
+      ansible.builtin.command: systemctl disable 'tmp-kernel\x2dbuild.mount'
+      failed_when: false
+
+# --- k3s restore ---
+- name: Restore k3s-server on builder
   hosts: builder
   become: true
   gather_facts: false
@@ -13,9 +43,9 @@
       ansible.builtin.service:
         name: k3s
         state: started
-      ignore_errors: true
+      failed_when: false
 
-- name: Start k3s-agent on workers
+- name: Restore k3s-agent on workers
   hosts: workers
   become: true
   gather_facts: false
@@ -24,11 +54,11 @@
       ansible.builtin.service:
         name: k3s-agent
         state: started
-      ignore_errors: true
+      failed_when: false
 
 - name: Report cluster mode restored
   hosts: builder
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "Cluster mode restored: k3s-server and k3s-agent running."
+        msg: "CLUSTER MODE restored: distccd stopped, tmpfs disabled, k3s services running."

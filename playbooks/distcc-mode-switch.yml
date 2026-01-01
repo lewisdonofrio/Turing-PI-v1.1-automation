@@ -1,29 +1,60 @@
 # /opt/ansible-k3s-cluster/playbooks/distcc-mode-switch.yml
-# Purpose: Switch entire cluster into distcc build mode safely.
+# Purpose: Switch entire cluster into DISTCC BUILD MODE safely.
+# Behavior: Stops all k3s services, prepares builder, resets workers, and enables tmpfs.
 # Author: Lewis Donofrio
-# Notes:
-#   - Ensures builder is clean (no distccd).
-#   - Ensures workers are clean and running distccd.
-#   - Safe to run at 1am. ASCII-only.
+# Notes: Safe to run at 1am. ASCII-only. Idempotent.
 
-- name: Switch cluster to distcc build mode
-  hosts: all
+# --- Stop k3s on builder ---
+- name: Stop k3s-server on builder
+  hosts: builder
+  become: true
   gather_facts: false
-
   tasks:
-
-    - name: Stop k3s everywhere
-      ansible.builtin.systemd:
+    - name: Stop k3s-server
+      ansible.builtin.service:
         name: k3s
         state: stopped
-      ignore_errors: true
+      failed_when: false
 
+# --- Stop k3s on workers ---
+- name: Stop k3s-agent on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop k3s-agent
+      ansible.builtin.service:
+        name: k3s-agent
+        state: stopped
+      failed_when: false
+
+# --- Enable tmpfs on builder ---
+- name: Enable tmpfs mount for kernel builds
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ensure tmpfs mountpoint exists
+      ansible.builtin.file:
+        path: /tmp/kernel-build
+        state: directory
+        mode: '0755'
+
+    - name: Enable tmpfs mount unit
+      ansible.builtin.command: systemctl enable 'tmp-kernel\x2dbuild.mount'
+
+    - name: Start tmpfs mount unit
+      ansible.builtin.command: systemctl start 'tmp-kernel\x2dbuild.mount'
+
+# --- Clean builder distcc state ---
 - name: Clean builder state
   import_playbook: /opt/ansible-k3s-cluster/playbooks/builder-distccd-guard.yml
 
+# --- Reset workers for distcc ---
 - name: Reset workers for distcc
   import_playbook: /opt/ansible-k3s-cluster/playbooks/worker-distccd-reset.yml
 
+# --- Report final state ---
 - name: Report mode switch complete
   hosts: builder
   gather_facts: false
@@ -31,7 +62,9 @@
     - name: Mode switch summary
       ansible.builtin.debug:
         msg:
-          - "Cluster is now in DISTCC BUILD MODE."
+          - "DISTCC BUILD MODE active."
+          - "k3s stopped on builder and workers."
+          - "tmpfs mounted on builder."
           - "Builder is clean (no distccd)."
           - "Workers are running distccd."
           - "Safe to run kernel-build.yml now."

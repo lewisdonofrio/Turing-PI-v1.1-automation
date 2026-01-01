@@ -2,7 +2,7 @@
 # Purpose: Enter BUILD MODE for distributed kernel builds.
 # Behavior: Stops all k3s services and prepares builder + workers.
 # Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent.
+# Notes: Safe to run at 2am. Idempotent. ASCII-only.
 
 - name: Stop k3s-server on builder
   hosts: builder
@@ -25,6 +25,24 @@
         name: k3s-agent
         state: stopped
       failed_when: false
+
+# --- tmpfs mount for kernel builds (builder only) ---
+- name: Prepare tmpfs mount for kernel builds
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ensure tmpfs mountpoint exists
+      ansible.builtin.file:
+        path: /tmp/kernel-build
+        state: directory
+        mode: '0755'
+
+    - name: Enable tmpfs mount unit
+      ansible.builtin.command: systemctl enable 'tmp-kernel\x2dbuild.mount'
+
+    - name: Start tmpfs mount unit
+      ansible.builtin.command: systemctl start 'tmp-kernel\x2dbuild.mount'
 
 # --- distcc bootstrap ---
 - import_playbook: distccd-bootstrap.yml
@@ -59,4 +77,4 @@
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "BUILD MODE active: k3s stopped, distcc validated, environment enforced."
+        msg: "BUILD MODE active: k3s stopped, tmpfs mounted, distcc validated, environment enforced."

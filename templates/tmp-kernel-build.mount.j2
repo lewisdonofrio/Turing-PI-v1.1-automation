@@ -1,0 +1,23 @@
+# =============================================================================
+# File: /etc/systemd/system/tmp-kernel-build.mount
+# =============================================================================
+# Purpose:
+#   Mount tmpfs at /tmp/kernel-build for distributed kernel builds.
+#   ASCII-only. Deterministic. Safe to run at any time.
+# =============================================================================
+
+[Unit]
+Description=Tmpfs for kernel build output
+Documentation=none
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target
+
+[Mount]
+What=tmpfs
+Where=/tmp/kernel-build
+Type=tmpfs
+Options=size=6G,mode=0755
+
+[Install]
+WantedBy=local-fs.target

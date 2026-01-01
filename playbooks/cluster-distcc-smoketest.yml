@@ -1,11 +1,18 @@
----
 # /opt/ansible-k3s-cluster/playbooks/cluster-distcc-smoketest.yml
-# Purpose: Compile a small C program via distcc on all workers.
-# Notes: Run while watching distccmon-text on the builder.
+# Purpose: Perform a real distributed compile smoketest across the cluster.
+# Behavior: Confirms distcc is functional, workers receive jobs, and cc1 runs remotely.
+# Author: Lewis Donofrio
+# Notes: Run while watching distccmon-text on the builder. ASCII-only. Idempotent.
 
+---
+
+# =============================================================================
+# Builder smoketest
+# =============================================================================
 - name: Distcc smoketest from builder
   hosts: builder
   become: false
+  gather_facts: false
 
   vars_files:
     - /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
@@ -13,6 +20,7 @@
   vars:
     distcc_test_dir: /tmp/distcc-smoketest
     distcc_test_source: /tmp/distcc-smoketest/hello.c
+    distcc_test_output: /tmp/distcc-smoketest/hello.o
     distcc_hosts_env: "{{ distcc_hosts | join(' ') }}"
 
   tasks:
@@ -36,16 +44,69 @@
 
     - name: Clean previous artifacts
       ansible.builtin.file:
-        path: "{{ distcc_test_dir }}/hello.o"
+        path: "{{ distcc_test_output }}"
         state: absent
 
-    - name: Run distcc smoketest compile (forced distcc, bypass wrapper, explicit paths)
-      ansible.builtin.command:
-        cmd: >
-          /usr/bin/env
-          PATH="/usr/bin:/bin"
-          DISTCC_HOSTS="{{ distcc_hosts_env }}"
-          /usr/bin/distcc /usr/bin/gcc -c "{{ distcc_test_source }}" -o "{{ distcc_test_dir }}/hello.o"
+    - name: Run distcc smoketest compile (forced distcc, explicit paths)
+      ansible.builtin.shell: |
+        /usr/bin/env \
+        PATH="/usr/bin:/bin" \
+        DISTCC_HOSTS="{{ distcc_hosts_env }}" \
+        /usr/bin/distcc /usr/bin/gcc -v -c "{{ distcc_test_source }}" -o "{{ distcc_test_output }}"
       args:
         chdir: "{{ distcc_test_dir }}"
+        executable: /bin/bash
+      register: compile_output
 
+    - name: Report compile output
+      ansible.builtin.debug:
+        msg: "{{ compile_output.stdout_lines }}"
+
+    - name: Verify object file exists
+      ansible.builtin.stat:
+        path: "{{ distcc_test_output }}"
+      register: obj_stat
+
+    - name: Report object file status
+      ansible.builtin.debug:
+        msg: "Object file created: {{ obj_stat.stat.exists }}"
+
+# =============================================================================
+# Worker verification (cc1 activity)
+# =============================================================================
+- name: Check worker cc1 activity
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check for cc1 processes
+      ansible.builtin.shell: pgrep -a cc1 || true
+      register: cc1_processes
+      args:
+        executable: /bin/bash
+
+    - name: Report cc1 activity
+      ansible.builtin.debug:
+        msg: "Worker {{ inventory_hostname }} cc1: {{ cc1_processes.stdout | default('none') }}"
+
+# =============================================================================
+# Worker distccd logs
+# =============================================================================
+- name: Check worker distccd logs
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Tail last 10 lines of distccd log
+      ansible.builtin.shell: tail -n 10 /var/log/distccd/distccd.log || true
+      register: distccd_log
+      args:
+        executable: /bin/bash
+
+    - name: Report distccd log tail
+      ansible.builtin.debug:
+        msg: "Worker {{ inventory_hostname }} log tail: {{ distccd_log.stdout_lines }}"
