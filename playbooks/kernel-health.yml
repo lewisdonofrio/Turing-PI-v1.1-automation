@@ -20,6 +20,10 @@
   vars:
     module_dir: "/usr/lib/modules"
     boot_dir: "/boot"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
 
   tasks:
 

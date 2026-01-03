@@ -1,0 +1,98 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-install.yml
+# =====================================================================
+#  Purpose:
+#    Install a staged kernel onto each cluster node. This playbook
+#    performs installation ONLY. It does not distribute, verify, or
+#    reboot. It unpacks modules, installs the kernel Image and DTBs,
+#    and updates /boot and /lib/modules in an idempotent manner.
+#
+#  Notes:
+#    - Must be run AFTER kernel-distribute.yml.
+#    - Assumes artifacts are staged in:
+#        /var/lib/kernel-staging/<version>/
+#    - Does not reboot nodes.
+#    - Does not verify kernel health.
+#    - No local build logic belongs here.
+# =====================================================================
+
+- name: Install staged kernel on cluster nodes
+  hosts: kubenodes
+  become: yes
+  gather_facts: no
+
+  vars:
+    kernel_version: "6.18.1-rpi"
+    staging_dir: "/var/lib/kernel-staging/{{ kernel_version }}"
+    modules_archive: "{{ staging_dir }}/modules.tar.gz"
+    modules_target: "/lib/modules/{{ kernel_version }}"
+    boot_dir: "/boot"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
+
+  tasks:
+
+    - name: Ensure staged kernel artifacts exist
+      stat:
+        path: "{{ staging_dir }}/Image"
+      register: image_check
+
+    - name: Fail if kernel Image is missing
+      fail:
+        msg: "Kernel Image not found in staging directory: {{ staging_dir }}"
+      when: not image_check.stat.exists
+
+    - name: Ensure modules directory exists
+      file:
+        path: "{{ modules_target }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Extract kernel modules
+      unarchive:
+        src: "{{ modules_archive }}"
+        dest: "/lib/modules/"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: "0755"
+      register: modules_unpack
+
+    - name: Copy kernel Image to /boot
+      copy:
+        src: "{{ staging_dir }}/Image"
+        dest: "{{ boot_dir }}/kernel-{{ kernel_version }}"
+        owner: root
+        group: root
+        mode: "0644"
+        checksum: "sha256"
+
+    - name: Copy DTBs to /boot
+      copy:
+        src: "{{ staging_dir }}/dtbs/"
+        dest: "{{ boot_dir }}/dtbs-{{ kernel_version }}/"
+        owner: root
+        group: root
+        mode: "0644"
+        recursive: yes
+        checksum: "sha256"
+
+    - name: Update /boot/kernel.img symlink
+      file:
+        src: "kernel-{{ kernel_version }}"
+        dest: "{{ boot_dir }}/kernel.img"
+        state: link
+
+    - name: Update /boot/dtbs symlink
+      file:
+        src: "dtbs-{{ kernel_version }}"
+        dest: "{{ boot_dir }}/dtbs"
+        state: link
+
+    - name: Display installation summary
+      debug:
+        msg: "Kernel {{ kernel_version }} installed on {{ inventory_hostname }}. Modules unpacked: {{ modules_unpack.changed }}"

@@ -12,6 +12,10 @@
   vars:
     workspace: "/home/builder/linux-rpi-k3s/kernel"
     config_path: "/home/builder/linux-rpi-k3s/kernel/.config"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
 
   tasks:
 
@@ -35,10 +39,6 @@
     - name: Run make olddefconfig
       ansible.builtin.shell: |
         cd {{ workspace }}
-        export PATH="/usr/lib/distcc:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
-        export CC="distcc gcc"
-        export HOSTCC="distcc gcc"
-        export HOSTCXX="distcc g++"
         make olddefconfig
       args:
         executable: /bin/bash

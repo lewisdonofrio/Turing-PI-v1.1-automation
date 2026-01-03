@@ -1,8 +1,11 @@
 # /opt/ansible-k3s-cluster/playbooks/builder-mode.yml
 # Purpose: Enter BUILD MODE for distributed kernel builds.
-# Behavior: Stops all k3s services and prepares builder + workers.
-# Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent. ASCII-only.
+# Behavior: Stops all k3s services, prepares builder + workers, ensures tmpfs,
+# verifies distcc + pump readiness. ASCII-only. Idempotent. 2AM-safe.
+
+# ---------------------------------------------------------------
+# 1. Stop k3s services
+# ---------------------------------------------------------------
 
 - name: Stop k3s-server on builder
   hosts: builder
@@ -26,7 +29,10 @@
         state: stopped
       failed_when: false
 
-# --- tmpfs mount for kernel builds (builder only) ---
+# ---------------------------------------------------------------
+# 2. Ensure tmpfs mount for kernel builds (builder only)
+# ---------------------------------------------------------------
+
 - name: Prepare tmpfs mount for kernel builds
   hosts: builder
   become: true
@@ -34,26 +40,88 @@
   tasks:
     - name: Ensure tmpfs mountpoint exists
       ansible.builtin.file:
-        path: /tmp/kernel-build
+        path: /tmp/kernelbuild
         state: directory
-        mode: '0755'
+        mode: '0775'
+        owner: builder
+        group: builder
 
-    - name: Enable tmpfs mount unit
-      ansible.builtin.command: systemctl enable 'tmp-kernel\x2dbuild.mount'
+    - name: Install tmp-kernelbuild.mount unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tmp-kernelbuild.mount
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Tmpfs for kernel build workspace
+          Before=local-fs.target
 
-    - name: Start tmpfs mount unit
-      ansible.builtin.command: systemctl start 'tmp-kernel\x2dbuild.mount'
+          [Mount]
+          What=tmpfs
+          Where=/tmp/kernelbuild
+          Type=tmpfs
+          Options=size=6G,mode=0775,uid=builder,gid=builder
 
-# --- distcc bootstrap ---
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+
+    - name: Enable tmpfs mount
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        enabled: yes
+
+    - name: Start tmpfs mount
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        state: started
+
+    - name: Verify tmpfs is mounted
+      ansible.builtin.command: mountpoint -q /tmp/kernelbuild
+      register: tmpfs_check
+      failed_when: tmpfs_check.rc != 0
+      changed_when: false
+
+# ---------------------------------------------------------------
+# 3. distcc bootstrap + validation + smoketest
+# ---------------------------------------------------------------
+
 - import_playbook: distccd-bootstrap.yml
-
-# --- distcc validation ---
 - import_playbook: cluster-distcc-validate.yml
-
-# --- distcc smoketest ---
 - import_playbook: cluster-distcc-smoketest.yml
 
-# --- Builder environment enforcement ---
+# ---------------------------------------------------------------
+# 4. Ensure distccd state is correct
+# ---------------------------------------------------------------
+
+- name: Ensure distccd is NOT running on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Stop distccd on builder
+      ansible.builtin.systemd:
+        name: distccd
+        enabled: no
+        state: stopped
+      failed_when: false
+
+- name: Ensure distccd IS running on workers
+  hosts: workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Start distccd on workers
+      ansible.builtin.systemd:
+        name: distccd
+        enabled: yes
+        state: started
+
+# ---------------------------------------------------------------
+# 5. Builder environment enforcement (PATH, HOSTS, CC)
+# ---------------------------------------------------------------
+
 - name: Enforce builder PATH + CC environment
   hosts: builder
   become: true
@@ -65,16 +133,45 @@
         mode: '0644'
         content: |
           # Builder distcc environment
-          export PATH="/usr/lib/distcc:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
-          export CC="distcc gcc"
-          export HOSTCC="distcc gcc"
-          export HOSTCXX="distcc g++"
-          export MAKEFLAGS="CC='distcc gcc'"
-          export DISTCC_HOSTS="kubenode2.home.lab kubenode3.home.lab kubenode4.home.lab kubenode5.home.lab kubenode6.home.lab kubenode7.home.lab"
+          export PATH="/usr/lib/distcc/bin:/usr/lib/distcc:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+          export DISTCC_PUMP=1
+          export DISTCC_HOSTS="kubenode2.home.lab/6 kubenode3.home.lab/6 kubenode4.home.lab/6 kubenode5.home.lab/6 kubenode6.home.lab/6 kubenode7.home.lab/6"
+          export HOSTCC="/usr/bin/gcc"
+          export HOSTCXX="/usr/bin/g++"
+
+# ---------------------------------------------------------------
+# 6. Pump-mode smoke test (builder only)
+# ---------------------------------------------------------------
+
+- name: Pump-mode smoke test
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Run pump-mode tiny compile
+      ansible.builtin.command: >
+        pump distcc gcc -c -o /tmp/kernelbuild/test.o -x c /dev/null
+      register: pump_test
+      failed_when: pump_test.rc != 0
+      changed_when: false
+
+# ---------------------------------------------------------------
+# 7. Final mode banner
+# ---------------------------------------------------------------
 
 - name: Report builder mode active
   hosts: builder
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "BUILD MODE active: k3s stopped, tmpfs mounted, distcc validated, environment enforced."
+        msg: |
+          ============================================================
+          BUILD MODE ACTIVE
+          k3s stopped on all nodes
+          tmpfs mounted at /tmp/kernelbuild
+          distccd running on workers
+          distccd disabled on builder
+          PATH + CC environment enforced
+          pump-mode verified
+          Ready for distributed kernel build
+          ============================================================

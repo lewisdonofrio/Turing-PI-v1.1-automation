@@ -1,0 +1,198 @@
+---
+#  FILE: /opt/ansible-k3s-cluster/playbooks/post-power-on-checklist.yml
+#  PURPOSE:
+#    Automated verification after full chassis power-on.
+#    Confirms node reachability, DNS, SSH, clocks, network, storage,
+#    and service states. Ensures cluster is ready for mode-switch.
+#
+#  NOTES:
+#    - ASCII-only, nano-safe, no tabs.
+#    - No failures for expected non-zero return codes.
+#    - Deterministic, 2AM-safe, future-maintainer-safe.
+# =====================================================================
+
+- name: Post-power-on cluster verification
+  hosts: all
+  gather_facts: false
+
+  tasks:
+
+    # ---------------------------------------------------------------
+    # 1. Verify node reachability
+    # ---------------------------------------------------------------
+    - name: Ping all nodes
+      ansible.builtin.ping:
+
+    # ---------------------------------------------------------------
+    # 2. Verify DNS resolution
+    # ---------------------------------------------------------------
+    - name: Check DNS resolution for each host
+      ansible.builtin.command: "getent hosts {{ inventory_hostname }}"
+      register: dns_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display DNS result
+      ansible.builtin.debug:
+        msg: "DNS: {{ dns_result.stdout }}"
+
+    # ---------------------------------------------------------------
+    # 3. Verify SSH access (implicit via Ansible)
+    # ---------------------------------------------------------------
+    - name: Confirm SSH identity
+      ansible.builtin.command: "id"
+      register: id_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display SSH identity
+      ansible.builtin.debug:
+        msg: "SSH identity: {{ id_result.stdout }}"
+
+    # ---------------------------------------------------------------
+    # 4. Verify system clocks
+    # ---------------------------------------------------------------
+    - name: Show system time
+      ansible.builtin.command: "date"
+      register: date_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display system time
+      ansible.builtin.debug:
+        msg: "Time: {{ date_result.stdout }}"
+
+    # ---------------------------------------------------------------
+    # 5. Verify network health
+    # ---------------------------------------------------------------
+    - name: Show uptime
+      ansible.builtin.command: "uptime"
+      register: uptime_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display uptime
+      ansible.builtin.debug:
+        msg: "Uptime: {{ uptime_result.stdout }}"
+
+    - name: Show IPv4 addresses
+      ansible.builtin.command: "ip -4 addr"
+      register: ip_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display IPv4 addresses
+      ansible.builtin.debug:
+        msg: "IPv4: {{ ip_result.stdout }}"
+
+    # ---------------------------------------------------------------
+    # 6. Verify storage health
+    # ---------------------------------------------------------------
+    - name: Show root filesystem usage
+      ansible.builtin.command: "df -h /"
+      register: df_result
+      failed_when: false
+      changed_when: false
+
+    # ---------------------------------------------------------------
+    # 7. Ensure kernel build tmpfs mount exists
+    # ---------------------------------------------------------------
+    - name: Ensure /tmp/kernelbuild directory exists
+      ansible.builtin.file:
+        path: /tmp/kernelbuild
+        state: directory
+        owner: builder
+        group: builder
+        mode: "0775"
+
+    - name: Install tmp-kernelbuild.mount systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tmp-kernelbuild.mount
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Tmpfs for kernel build workspace
+          Before=local-fs.target
+
+          [Mount]
+          What=tmpfs
+          Where=/tmp/kernelbuild
+          Type=tmpfs
+          Options=size=6G,mode=0775,uid=builder,gid=builder
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      ansible.builtin.command: systemctl daemon-reload
+
+    - name: Enable tmp-kernelbuild.mount
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        enabled: yes
+
+    - name: Start tmp-kernelbuild.mount
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        state: started
+
+    - name: Verify tmpfs is mounted at /tmp/kernelbuild
+      ansible.builtin.command: mountpoint -q /tmp/kernelbuild
+      register: tmpfs_check
+      failed_when: tmpfs_check.rc != 0
+      changed_when: false
+    # ---------------------------------------------------------------
+    # 8. Verify distcc pump-mode readiness
+    # ---------------------------------------------------------------
+
+    - name: Verify distcc is installed
+      ansible.builtin.command: "which distcc"
+      register: distcc_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display distcc binary path
+      ansible.builtin.debug:
+        msg: "distcc: {{ distcc_check.stdout | default('NOT FOUND') }}"
+
+    - name: Verify pump script exists
+      ansible.builtin.command: "which pump"
+      register: pump_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display pump binary path
+      ansible.builtin.debug:
+        msg: "pump: {{ pump_check.stdout | default('NOT FOUND') }}"
+
+    - name: Verify distcc daemon is running
+      ansible.builtin.command: "systemctl is-active distccd"
+      register: distccd_status
+      failed_when: false
+      changed_when: false
+
+    - name: Display distccd status
+      ansible.builtin.debug:
+        msg: "distccd status: {{ distccd_status.stdout }}"
+
+    - name: Verify distcc hosts file
+      ansible.builtin.command: "cat /etc/distcc/hosts"
+      register: distcc_hosts
+      failed_when: false
+      changed_when: false
+
+    - name: Display distcc hosts
+      ansible.builtin.debug:
+        msg: "distcc hosts: {{ distcc_hosts.stdout | default('NO HOSTS FILE') }}"
+
+    - name: Verify distcc symlink wrapper is active
+      ansible.builtin.command: "ls -l $(which gcc)"
+      register: gcc_wrapper
+      failed_when: false
+      changed_when: false
+
+    - name: Display gcc wrapper
+      ansible.builtin.debug:
+        msg: "gcc wrapper: {{ gcc_wrapper.stdout }}"

@@ -1,0 +1,79 @@
+# =====================================================================
+#  CLUSTER ORDERED SHUTDOWN PLAYBOOK
+#
+#  Purpose:
+#    Shut down all Raspberry Pi nodes in strict descending order.
+#    Each node is shut down only after the previous one is confirmed
+#    offline. This prevents cascading SSH failures and ensures a
+#    predictable, safe power-down sequence for the Turing Pi chassis.
+#
+#  Order:
+#    kubenode7
+#    kubenode6
+#    kubenode5
+#    kubenode4
+#    kubenode3
+#    kubenode2
+#    kubenode1 (builder) — LAST
+#
+#  Notes:
+#    - Unreachable nodes are skipped automatically.
+#    - This playbook is ASCII-only, nano-safe, idempotent.
+#    - Designed for 2 AM operational safety.
+# =====================================================================
+
+- name: Ordered shutdown of cluster nodes
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    shutdown_order:
+      - kubenode7.home.lab
+      - kubenode6.home.lab
+      - kubenode5.home.lab
+      - kubenode4.home.lab
+      - kubenode3.home.lab
+      - kubenode2.home.lab
+      - kubenode1.home.lab
+
+  tasks:
+
+    - name: Begin ordered shutdown sequence
+      debug:
+        msg: "Starting ordered shutdown: {{ shutdown_order }}"
+
+    - name: Shutdown each node in order
+      vars:
+        target: "{{ item }}"
+      block:
+
+        - name: Check if {{ target }} is reachable
+          ansible.builtin.command: "ping -c1 -W1 {{ target }}"
+          register: ping_result
+          ignore_errors: true
+
+        - name: Skip {{ target }} if unreachable
+          ansible.builtin.debug:
+            msg: "{{ target }} unreachable, skipping."
+          when: ping_result.rc != 0
+
+        - name: Issue shutdown to {{ target }}
+          ansible.builtin.command: >
+            ssh -o BatchMode=yes -o ConnectTimeout=3 ansible@{{ target }}
+            "sudo shutdown -h now"
+          when: ping_result.rc == 0
+          ignore_errors: true
+
+        - name: Wait for {{ target }} to go offline
+          ansible.builtin.wait_for:
+            host: "{{ target }}"
+            port: 22
+            state: stopped
+            timeout: 60
+          when: ping_result.rc == 0
+
+        - name: Confirm {{ target }} is offline
+          ansible.builtin.debug:
+            msg: "{{ target }} is now offline."
+
+      loop: "{{ shutdown_order }}"

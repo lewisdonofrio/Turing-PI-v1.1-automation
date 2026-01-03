@@ -1,0 +1,66 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-reboot.yml
+# =====================================================================
+#  Purpose:
+#    Perform a controlled, rolling reboot of all cluster nodes after a
+#    kernel installation. This playbook reboots nodes ONLY. It does not
+#    install, distribute, or verify kernel files. It ensures each node
+#    returns to service before proceeding to the next.
+#
+#  Usage:
+#    ansible-playbook \
+#      -i /opt/ansible-k3s-cluster/inventory/hosts \
+#      /opt/ansible-k3s-cluster/playbooks/kernel-reboot.yml
+#
+#  Notes:
+#    - Must be run AFTER kernel-verify.yml.
+#    - Does NOT check uname -r (that is post-deployment verification).
+#    - ASCII-only, nano-safe, deterministic, idempotent.
+# =====================================================================
+
+- name: Rolling reboot of cluster nodes
+  hosts: kubenodes
+  become: yes
+  gather_facts: no
+  serial: 1
+
+  vars:
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
+
+  tasks:
+
+    ###################################################################
+    # 1. Announce reboot
+    ###################################################################
+
+    - name: Announce reboot on node
+      debug:
+        msg: "Rebooting {{ inventory_hostname }}..."
+
+    ###################################################################
+    # 2. Reboot node
+    ###################################################################
+
+    - name: Reboot node
+      reboot:
+        reboot_timeout: 600
+        test_command: "true"
+
+    ###################################################################
+    # 3. Confirm node is reachable again
+    ###################################################################
+
+    - name: Wait for node to return
+      wait_for_connection:
+        timeout: 300
+
+    ###################################################################
+    # 4. Final confirmation
+    ###################################################################
+
+    - name: Node rebooted successfully
+      debug:
+        msg: "{{ inventory_hostname }} rebooted and is reachable."

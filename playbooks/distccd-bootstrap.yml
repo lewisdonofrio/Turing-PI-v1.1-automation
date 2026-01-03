@@ -71,6 +71,7 @@
             --jobs {{ distcc_jobs }} \
             --log-file /var/log/distccd/distccd.log \
             --pid-file /run/distccd/distccd.pid
+          Environment="PATH={{ distcc_bin_dir }}:/usr/bin:/bin"
           RuntimeDirectory=distccd
           RuntimeDirectoryMode=0755
           LogsDirectory=distccd

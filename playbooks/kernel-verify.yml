@@ -1,43 +1,117 @@
-# =============================================================================
-# File: /opt/ansible-k3s-cluster/kernel-verify.yml
-# =============================================================================
-# Purpose:
-#   Verify that the deployed kernel, DTBs, and modules match the expected
-#   version after deployment.
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-verify.yml
+# =====================================================================
+#  Purpose:
+#    Verify that the newly installed kernel, DTBs, and modules are
+#    present, complete, and ready for activation. This playbook checks
+#    installation state ONLY. It does not validate build artifacts,
+#    distribute files, or reboot nodes.
 #
-# Usage:
-#   ansible-playbook \
-#     -i /opt/ansible-k3s-cluster/inventory/hosts \
-#     /opt/ansible-k3s-cluster/kernel-verify.yml
+#  Usage:
+#    ansible-playbook \
+#      -i /opt/ansible-k3s-cluster/inventory/hosts \
+#      /opt/ansible-k3s-cluster/playbooks/kernel-verify.yml
 #
-# Notes:
-#   - Compares uname -r with /lib/modules/<version>.
-#   - Confirms zImage exists and is non-empty.
-# =============================================================================
+#  Notes:
+#    - Must be run AFTER kernel-install.yml.
+#    - Does NOT compare uname -r (that happens after reboot).
+#    - Ensures /boot, DTBs, and /lib/modules/<version> are correct.
+#    - ASCII-only, nano-safe, deterministic, idempotent.
+# =====================================================================
 
----
-- hosts: k3s_cluster
+- name: Verify installed kernel on cluster nodes
+  hosts: kubenodes
   become: yes
+  gather_facts: no
+
+  vars:
+    kernel_version: "6.18.1-rpi"
+    boot_dir: "/boot"
+    image_path: "/boot/kernel-{{ kernel_version }}"
+    dtbs_path: "/boot/dtbs-{{ kernel_version }}"
+    modules_path: "/lib/modules/{{ kernel_version }}"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
 
   tasks:
-    - name: Check running kernel version
-      command: uname -r
-      register: uname_out
+
+    ###################################################################
+    # 1. Verify kernel Image
+    ###################################################################
+
+    - name: Check kernel Image exists
+      stat:
+        path: "{{ image_path }}"
+      register: image_check
+
+    - name: Fail if kernel Image is missing
+      fail:
+        msg: "Kernel Image missing on {{ inventory_hostname }} at {{ image_path }}"
+      when: not image_check.stat.exists
+
+    - name: Fail if kernel Image is zero bytes
+      fail:
+        msg: "Kernel Image is zero bytes on {{ inventory_hostname }} at {{ image_path }}"
+      when: image_check.stat.size == 0
+
+    ###################################################################
+    # 2. Verify DTBs
+    ###################################################################
+
+    - name: Check DTBs directory exists
+      stat:
+        path: "{{ dtbs_path }}"
+      register: dtbs_check
+
+    - name: Fail if DTBs directory is missing
+      fail:
+        msg: "DTBs directory missing on {{ inventory_hostname }} at {{ dtbs_path }}"
+      when: not dtbs_check.stat.exists
+
+    - name: Check DTBs contain at least one .dtb file
+      find:
+        paths: "{{ dtbs_path }}"
+        patterns: "*.dtb"
+        file_type: file
+      register: dtb_files
+
+    - name: Fail if no DTB files found
+      fail:
+        msg: "No DTB files found on {{ inventory_hostname }} in {{ dtbs_path }}"
+      when: dtb_files.matched == 0
+
+    ###################################################################
+    # 3. Verify modules
+    ###################################################################
 
     - name: Check modules directory exists
       stat:
-        path: "/lib/modules/{{ uname_out.stdout }}"
-      register: modules_dir
+        path: "{{ modules_path }}"
+      register: modules_check
 
-    - name: Check zImage exists
-      stat:
-        path: /boot/zImage
-      register: zimage_stat
+    - name: Fail if modules directory is missing
+      fail:
+        msg: "Modules directory missing on {{ inventory_hostname }} at {{ modules_path }}"
+      when: not modules_check.stat.exists
 
-    - name: Display verification results
+    - name: Check for .ko files
+      find:
+        paths: "{{ modules_path }}"
+        patterns: "*.ko"
+        file_type: file
+      register: ko_files
+
+    - name: Fail if no kernel modules found
+      fail:
+        msg: "No .ko modules found on {{ inventory_hostname }} under {{ modules_path }}"
+      when: ko_files.matched == 0
+
+    ###################################################################
+    # 4. Final confirmation
+    ###################################################################
+
+    - name: Kernel installation verified
       debug:
-        msg:
-          - "Kernel version: {{ uname_out.stdout }}"
-          - "Modules directory exists: {{ modules_dir.stat.exists }}"
-          - "zImage exists: {{ zimage_stat.stat.exists }}"
-          - "zImage size: {{ zimage_stat.stat.size }}"
+        msg: "Kernel {{ kernel_version }} installation verified on {{ inventory_hostname }}."

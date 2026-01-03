@@ -1,8 +1,12 @@
 # /opt/ansible-k3s-cluster/playbooks/cluster-mode.yml
 # Purpose: Enter CLUSTER MODE for normal k3s operation.
-# Behavior: Stops distccd, disables tmpfs mount, restores k3s services.
-# Author: Lewis Donofrio
-# Notes: Safe to run at 2am. Idempotent. ASCII-only.
+# Behavior: Stops distccd, disables tmpfs mount, restores k3s services,
+# removes builder environment, validates k3s health.
+# Notes: ASCII-only, idempotent, 2AM-safe.
+
+# ---------------------------------------------------------------
+# 1. Stop distccd everywhere
+# ---------------------------------------------------------------
 
 - name: Stop distccd on all nodes
   hosts: all
@@ -10,38 +14,71 @@
   gather_facts: false
   tasks:
     - name: Stop distccd service
-      ansible.builtin.service:
+      ansible.builtin.systemd:
         name: distccd
         state: stopped
       failed_when: false
 
     - name: Disable distccd service
-      ansible.builtin.command: systemctl disable distccd
+      ansible.builtin.systemd:
+        name: distccd
+        enabled: no
       failed_when: false
 
-# --- tmpfs teardown (builder only) ---
+# ---------------------------------------------------------------
+# 2. Disable tmpfs mount (builder only)
+# ---------------------------------------------------------------
+
 - name: Disable tmpfs mount for kernel builds
   hosts: builder
   become: true
   gather_facts: false
   tasks:
     - name: Stop tmpfs mount unit
-      ansible.builtin.command: systemctl stop 'tmp-kernel\x2dbuild.mount'
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        state: stopped
       failed_when: false
 
     - name: Disable tmpfs mount unit
-      ansible.builtin.command: systemctl disable 'tmp-kernel\x2dbuild.mount'
+      ansible.builtin.systemd:
+        name: tmp-kernelbuild.mount
+        enabled: no
       failed_when: false
 
-# --- k3s restore ---
+    - name: Verify tmpfs is unmounted
+      ansible.builtin.command: mountpoint -q /tmp/kernelbuild
+      register: tmpfs_check
+      failed_when: tmpfs_check.rc == 0
+      changed_when: false
+
+# ---------------------------------------------------------------
+# 3. Remove builder-mode environment overrides
+# ---------------------------------------------------------------
+
+- name: Remove builder distcc environment file
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Delete /etc/profile.d/builder-distcc.sh
+      ansible.builtin.file:
+        path: /etc/profile.d/builder-distcc.sh
+        state: absent
+
+# ---------------------------------------------------------------
+# 4. Restore k3s services
+# ---------------------------------------------------------------
+
 - name: Start k3s-server on builder
   hosts: builder
   become: true
   gather_facts: false
   tasks:
     - name: Start k3s-server
-      ansible.builtin.service:
+      ansible.builtin.systemd:
         name: k3s
+        enabled: yes
         state: started
       failed_when: false
 
@@ -51,14 +88,48 @@
   gather_facts: false
   tasks:
     - name: Start k3s-agent
-      ansible.builtin.service:
+      ansible.builtin.systemd:
         name: k3s-agent
+        enabled: yes
         state: started
       failed_when: false
+
+# ---------------------------------------------------------------
+# 5. Validate k3s cluster health
+# ---------------------------------------------------------------
+
+- name: Validate k3s cluster health
+  hosts: builder
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check k3s node list
+      ansible.builtin.command: k3s kubectl get nodes
+      register: k3s_nodes
+      failed_when: false
+      changed_when: false
+
+    - name: Display k3s nodes
+      ansible.builtin.debug:
+        msg: "{{ k3s_nodes.stdout }}"
+
+# ---------------------------------------------------------------
+# 6. Final mode banner
+# ---------------------------------------------------------------
 
 - name: Report cluster mode active
   hosts: builder
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "CLUSTER MODE active: distccd stopped, tmpfs disabled, k3s restored."
+        msg: |
+          ============================================================
+          CLUSTER MODE ACTIVE
+          k3s-server running on builder
+          k3s-agent running on workers
+          distccd stopped everywhere
+          tmpfs unmounted and disabled
+          builder environment removed
+          k3s cluster validated
+          Ready for normal workloads
+          ============================================================

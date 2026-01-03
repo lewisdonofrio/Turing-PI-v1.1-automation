@@ -1,33 +1,29 @@
 # =====================================================================
 #  /opt/ansible-k3s-cluster/playbooks/kernel-rollback.yml
-#
+# =====================================================================
 #  Purpose:
 #    Roll back cluster nodes to a previous kernel using one of two
 #    supported rollback sources:
 #
 #      1. Pacman cache rollback (automatic)
-#         - Uses cached kernel packages under /var/cache/pacman/pkg
+#         - Installs previous kernel packages from /var/cache/pacman/pkg
 #
 #      2. Backup directory rollback (manual)
-#         - Uses backups created by kernel-backup.yml
-#         - Restores /boot and /lib/modules from a chosen backup dir
+#         - Restores /boot and /usr/lib/modules from a backup directory
+#         - Backups created by kernel-backup.yml
 #
-#    Supports staged rollback (worker7 first, then remaining nodes).
+#    Supports staged rollback and is safe to run on any subset of nodes.
 #
 #  Notes:
-#    - ASCII-only, nano-safe, deterministic.
+#    - ASCII-only, nano-safe, deterministic, idempotent.
 #    - No tabs, no Unicode, no timestamps.
-#    - Safe to run on any subset of nodes.
+#    - Does NOT install new kernels or verify post-reboot state.
 # =====================================================================
 
----
 - hosts: kernel_targets
   become: yes
   gather_facts: false
 
-  # ---------------------------------------------------------------
-  # PROMPT FOR ROLLBACK MODE (unconditional)
-  # ---------------------------------------------------------------
   vars_prompt:
     - name: rollback_mode
       prompt: |
@@ -41,12 +37,16 @@
     pacman_cache: "/var/cache/pacman/pkg"
     boot_dir: "/boot"
     modules_dir: "/usr/lib/modules"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
 
   tasks:
 
-    # ---------------------------------------------------------------
-    # VALIDATION & CONDITIONAL PROMPT FOR rollback_dir
-    # ---------------------------------------------------------------
+    #####################################################################
+    # 1. VALIDATE MODE AND PROMPT FOR BACKUP DIRECTORY IF NEEDED
+    #####################################################################
 
     - name: Validate rollback_mode is 1 or 2
       ansible.builtin.fail:
@@ -81,9 +81,10 @@
         - rollback_mode == '2'
         - not rollback_stat.stat.exists
 
-    # ---------------------------------------------------------------
-    # MODE 1: PACMAN CACHE ROLLBACK
-    # ---------------------------------------------------------------
+    #####################################################################
+    # 2. MODE 1: PACMAN CACHE ROLLBACK
+    #####################################################################
+
     - name: Find cached kernel packages (mode 1)
       ansible.builtin.find:
         paths: "{{ pacman_cache }}"
@@ -105,9 +106,10 @@
       loop: "{{ cached_pkgs.files }}"
       when: rollback_mode == "1"
 
-    # ---------------------------------------------------------------
-    # MODE 2: BACKUP DIRECTORY ROLLBACK
-    # ---------------------------------------------------------------
+    #####################################################################
+    # 3. MODE 2: BACKUP DIRECTORY ROLLBACK
+    #####################################################################
+
     - name: Restore /boot from backup (mode 2)
       ansible.builtin.synchronize:
         src: "{{ rollback_dir }}/boot/"
@@ -116,7 +118,7 @@
         delete: yes
       when: rollback_mode == "2"
 
-    - name: Restore /lib/modules from backup (mode 2)
+    - name: Restore /usr/lib/modules from backup (mode 2)
       ansible.builtin.synchronize:
         src: "{{ rollback_dir }}/modules/"
         dest: "{{ modules_dir }}/"
@@ -124,9 +126,10 @@
         delete: yes
       when: rollback_mode == "2"
 
-    # ---------------------------------------------------------------
-    # COMMON: REBOOT + SUMMARY
-    # ---------------------------------------------------------------
+    #####################################################################
+    # 4. REBOOT + SUMMARY
+    #####################################################################
+
     - name: Reboot node after rollback
       ansible.builtin.reboot:
         msg: "Rebooting after kernel rollback"

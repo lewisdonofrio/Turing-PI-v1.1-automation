@@ -19,7 +19,6 @@
   become: true
   gather_facts: false
 
-
   vars:
     workspace: "/home/builder/src/kernel"
     build_log: "/home/builder/src/kernel/kernel-build.log"
@@ -33,6 +32,11 @@
       kubenode5.home.lab
       kubenode6.home.lab
       kubenode7.home.lab
+
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
 
   tasks:
 
@@ -90,7 +94,7 @@
           bash -c "
           set -e;
           cd {{ workspace }};
-          export PATH=/usr/lib/distcc/bin:/usr/bin:/usr/sbin:/sbin:/bin;
+          export PATH={{ kernel_safe_path }};
           export ARCH=arm;
           export CROSS_COMPILE=;
           export DISTCC_HOSTS='{{ distcc_hosts }}';

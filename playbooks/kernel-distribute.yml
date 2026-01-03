@@ -1,0 +1,71 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-distribute.yml
+# =====================================================================
+#  Purpose:
+#    Distribute built kernel artifacts from kubenode1 to all cluster
+#    nodes. This playbook performs distribution ONLY. It does not
+#    install, activate, or reboot. It is safe, idempotent, and
+#    future-maintainer-friendly.
+#
+#  Notes:
+#    - Must be run AFTER kernel-build.sh completes successfully.
+#    - Assumes artifacts exist in /home/builder/src/kernel/out/
+#    - Stages files into /var/lib/kernel-staging/<version>/
+#    - No local build logic belongs here.
+# =====================================================================
+
+- name: Distribute kernel artifacts to cluster nodes
+  hosts: kubenodes
+  become: yes
+  gather_facts: no
+
+  vars:
+    kernel_version: "6.18.1-rpi"
+    artifact_src: "/home/builder/src/kernel/out"
+    staging_dir: "/var/lib/kernel-staging/{{ kernel_version }}"
+    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
+
+  environment:
+    PATH: "{{ kernel_safe_path }}"
+
+  tasks:
+
+    - name: Ensure staging directory exists
+      file:
+        path: "{{ staging_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy kernel Image
+      copy:
+        src: "{{ artifact_src }}/Image"
+        dest: "{{ staging_dir }}/Image"
+        owner: root
+        group: root
+        mode: "0644"
+        checksum: "sha256"
+
+    - name: Copy DTBs directory
+      copy:
+        src: "{{ artifact_src }}/dtbs/"
+        dest: "{{ staging_dir }}/dtbs/"
+        owner: root
+        group: root
+        mode: "0644"
+        recursive: yes
+        checksum: "sha256"
+
+    - name: Copy kernel modules archive
+      copy:
+        src: "{{ artifact_src }}/modules.tar.gz"
+        dest: "{{ staging_dir }}/modules.tar.gz"
+        owner: root
+        group: root
+        mode: "0644"
+        checksum: "sha256"
+
+    - name: Display staging summary
+      debug:
+        msg: "Kernel {{ kernel_version }} staged on {{ inventory_hostname }} at {{ staging_dir }}"

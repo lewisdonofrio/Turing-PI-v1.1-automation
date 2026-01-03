@@ -30,8 +30,16 @@
 
           [Service]
           ExecStart=
-          ExecStart=/usr/bin/distccd --no-detach --allow 192.168.29.0/24 --jobs 4
-          Environment=PATH=/usr/lib/distcc/bin:/usr/bin:/bin
+          ExecStart=/usr/bin/distccd --no-detach \
+            --allow 192.168.29.0/24 \
+            --jobs 6 \
+            --log-file /var/log/distccd/distccd.log \
+            --pid-file /run/distccd/distccd.pid
+          Environment="PATH=/usr/lib/distcc:/usr/bin:/bin"
+          RuntimeDirectory=distccd
+          RuntimeDirectoryMode=0755
+          LogsDirectory=distccd
+          LogsDirectoryMode=0755
 
       notify:
         - systemd_daemon_reload
