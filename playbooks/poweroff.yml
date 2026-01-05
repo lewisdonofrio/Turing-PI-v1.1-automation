@@ -1,0 +1,50 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/poweroff.yml
+# Transition cluster from BUILD MODE to CLUSTER MODE.
+# Stops distccd, unmounts tmpfs, and restores k3s services.
+
+- hosts: workers
+  become: yes
+  tasks:
+
+    - name: POWEROFF | Stop distccd on workers
+      systemd:
+        name: distccd
+        state: stopped
+        enabled: no
+
+    - name: POWEROFF | Unmount tmpfs on workers
+      mount:
+        path: /tmp/kernelbuild
+        state: unmounted
+
+- hosts: builder
+  become: yes
+  tasks:
+
+    - name: POWEROFF | Stop distccd on builder
+      systemd:
+        name: distccd
+        state: stopped
+        enabled: no
+
+    - name: POWEROFF | Unmount tmpfs on builder
+      mount:
+        path: /tmp/kernelbuild
+        state: unmounted
+
+    - name: POWEROFF | Start k3s-server on builder
+      systemd:
+        name: k3s
+        state: started
+        enabled: yes
+
+- hosts: workers
+  become: yes
+  tasks:
+
+    - name: POWEROFF | Start k3s-agent on workers
+      systemd:
+        name: k3s-agent
+        state: started
+        enabled: yes

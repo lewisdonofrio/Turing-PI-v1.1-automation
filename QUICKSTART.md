@@ -23,14 +23,24 @@
 # =============================================================================
 # Goal:
 #   Prepare the cluster for distributed kernel compilation.
+distccd-bootstrap.yml
+    Legacy provisioning playbook. Do not use for daily operations.
 
+worker-distccd-reset.yml
+    Reset worker distccd state after reboot.
+
+distccd-fix.yml
+    Apply correct distccd configuration and job limits.
+
+cluster-distcc-validate.yml
+    Validate cluster-wide distcc readiness before kernel builds.
 # Steps:
 # -----------------------------------------------------------------------------
 
 1. Verify connectivity
 ansible -i inventory/hosts all -m ping
 
-2. Bootstrap distcc workers (first-time only)
+2. Bootstrap distcc workers (first-time only) - not to be used anymore!
 ansible-playbook -i inventory/hosts playbooks/distccd-bootstrap.yml
 
 3. Enter DISTCC BUILD MODE

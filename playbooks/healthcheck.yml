@@ -1,0 +1,46 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/healthcheck.yml
+# Cluster-wide health verification.
+# Checks SSH, uptime, load, memory, tmpfs, distccd, and k3s state.
+
+- hosts: all
+  gather_facts: yes
+  become: yes
+  tasks:
+
+    - name: HEALTHCHECK | Report hostname and uptime
+      shell: uptime
+      register: uptime_out
+
+    - debug:
+        msg: "{{ inventory_hostname }} uptime: {{ uptime_out.stdout }}"
+
+    - name: HEALTHCHECK | Check free memory
+      shell: free -h
+      register: mem_out
+
+    - debug:
+        msg: "{{ inventory_hostname }} memory: {{ mem_out.stdout }}"
+
+    - name: HEALTHCHECK | Check tmpfs mount
+      shell: mount | grep kernelbuild || true
+      register: tmpfs_out
+
+    - debug:
+        msg: "{{ inventory_hostname }} tmpfs: {{ tmpfs_out.stdout }}"
+
+    - name: HEALTHCHECK | Check distccd state
+      shell: systemctl is-active distccd || true
+      register: distccd_state
+
+    - debug:
+        msg: "{{ inventory_hostname }} distccd: {{ distccd_state.stdout }}"
+
+    - name: HEALTHCHECK | Check k3s/k3s-agent state
+      shell: |
+        systemctl is-active k3s 2>/dev/null || true
+        systemctl is-active k3s-agent 2>/dev/null || true
+      register: k3s_state
+
+    - debug:
+        msg: "{{ inventory_hostname }} k3s: {{ k3s_state.stdout }}"

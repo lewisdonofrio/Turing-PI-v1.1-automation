@@ -1,0 +1,77 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/poweron.yml 
+# Orchestrates full BUILD MODE preparation for distributed kernel builds.
+# This playbook replaces manual sequences and legacy bootstrap steps.
+# It performs:
+#   - worker distccd reset
+#   - distccd configuration fix
+#   - distcc mode switch (builder + workers)
+#   - cluster-wide distcc validation
+#   - cluster-wide distcc smoketest
+#   - optional builder preparation steps
+
+- name: POWERON | Reset worker distccd state
+  import_playbook: worker-distccd-reset.yml
+
+- name: POWERON | Apply distccd configuration fixes
+  import_playbook: distccd-fix.yml
+
+- name: POWERON | Switch cluster into distcc build mode
+  import_playbook: distcc-mode-switch.yml
+
+- name: POWERON | Validate cluster-wide distcc readiness
+  import_playbook: cluster-distcc-validate.yml
+
+- name: POWERON | Run cluster-wide distcc smoketest
+  import_playbook: cluster-distcc-smoketest.yml
+
+# Optional builder preparation block
+# Ensures builder is in clean BUILD MODE:
+#   - k3s-server disabled
+#   - tmpfs mounted
+#   - pump mode environment ready
+#   - PATH overrides applied
+
+- hosts: builder
+  become: yes
+  tasks:
+
+    - name: POWERON | Stop k3s-server on builder
+      systemd:
+        name: k3s
+        state: stopped
+        enabled: no
+
+    - name: POWERON | Ensure tmpfs mount exists for kernel build
+      mount:
+        path: /tmp/kernelbuild
+        src: tmpfs
+        fstype: tmpfs
+        opts: size=2G,mode=1777
+        state: mounted
+
+    - name: POWERON | Ensure distccd is running on builder
+      systemd:
+        name: distccd
+        state: started
+        enabled: yes
+
+    - name: POWERON | Export pump mode environment (persistent shell profile)
+      lineinfile:
+        path: /etc/profile.d/distcc-pump.sh
+        create: yes
+        mode: '0755'
+        line: "{{ item }}"
+      loop:
+        - 'export DISTCC_PUMP=1'
+        - 'export PATH=/usr/lib/distcc:$PATH'
+
+    - name: POWERON | Confirm builder environment is ready
+      shell: |
+        echo "DISTCC_PUMP=$DISTCC_PUMP"
+        which distcc
+        which pump
+      register: builder_env
+
+    - debug:
+        var: builder_env.stdout

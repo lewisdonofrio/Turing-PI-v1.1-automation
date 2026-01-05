@@ -36,7 +36,7 @@
     - name: Run distributed compile
       shell: |
         cd /tmp/distcc-test
-        distcc -j32 gcc -c test.c -o test.o
+        distcc -j8 gcc -c test.c -o test.o
       register: compile_out
 
     - name: Display compile output
