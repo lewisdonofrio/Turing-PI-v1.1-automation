@@ -1,0 +1,210 @@
+============================================================
+ KERNEL BUILD DOCTRINE — RASPBERRY PI ARMv7 CLUSTER
+============================================================
+
+This document defines the canonical, deterministic, out-of-tree
+kernel build workflow for the Raspberry Pi ARMv7 cluster.
+
+It exists to protect future maintainers from ambiguity, drift,
+and accidental source-tree pollution. All scripts, automation,
+and operational procedures MUST follow this doctrine.
+
+------------------------------------------------------------
+ 1. DIRECTORY LAYOUT
+------------------------------------------------------------
+
+SRC  = /home/builder/src/kernel
+BUILD = /home/builder/kernel-build
+CONFIG = /opt/ansible-k3s-cluster/kernel-configs/cm3plus.config
+BOOT = /boot
+
+SRC is the kernel source tree.
+BUILD is the persistent out-of-tree build directory.
+CONFIG is the canonical .config file.
+BOOT is the Raspberry Pi firmware partition.
+
+------------------------------------------------------------
+ 2. OUT-OF-TREE BUILD REQUIREMENTS
+------------------------------------------------------------
+
+The kernel MUST be built out-of-tree using:
+
+    make -C $SRC O=$BUILD ...
+
+The following MUST NEVER appear in SRC:
+
+    SRC/.config
+    SRC/include/generated/*
+    SRC/include/config/auto.conf*
+    SRC/*.cmd
+    SRC/**/*.cmd
+
+If any of these appear, the tree is dirty and MUST be cleaned
+with:
+
+    make -C $SRC mrproper
+
+------------------------------------------------------------
+ 3. CONFIGURATION DOCTRINE
+------------------------------------------------------------
+
+The canonical .config MUST live in:
+
+    $BUILD/.config
+
+It MUST NOT be placed in SRC.
+
+Config restoration is always:
+
+    cp $CONFIG $BUILD/.config
+    make -C $SRC O=$BUILD olddefconfig
+
+------------------------------------------------------------
+ 4. PREP PHASE (kernel-prep.sh)
+------------------------------------------------------------
+
+The prep phase MUST:
+
+  - Verify SRC exists
+  - Verify BUILD exists
+  - Detect dirty SRC
+  - Run mrproper if needed
+  - Restore canonical config into BUILD
+  - Run olddefconfig out-of-tree
+  - Warm include cache (optional)
+
+Prep MUST be run after:
+
+  - Updating kernel source
+  - Updating canonical config
+  - Cleaning persistent storage
+  - Any suspected drift
+
+------------------------------------------------------------
+ 5. BUILD PHASE (kernel-build.sh)
+------------------------------------------------------------
+
+The build phase MUST:
+
+  - Verify SRC is clean
+  - Verify BUILD contains .config
+  - Verify pump and distcc environment
+  - Run distributed build:
+
+        pump make -C $SRC O=$BUILD -jN
+
+  - Install modules:
+
+        sudo make -C $SRC O=$BUILD modules_install
+
+  - Install kernel image and DTBs into Raspberry Pi firmware layout
+
+------------------------------------------------------------
+ 6. RASPBERRY PI FIRMWARE LAYOUT
+------------------------------------------------------------
+
+The cluster uses the standard Raspberry Pi bootloader layout:
+
+    /boot/kernel7.img        ← kernel image
+    /boot/*.dtb              ← flat DTBs
+    /boot/overlays/*.dtbo    ← overlays
+    /boot/config.txt         ← boot config
+    /boot/cmdline.txt        ← kernel command line
+
+The build scripts MUST install:
+
+    BUILD/arch/arm/boot/zImage → /boot/kernel7.img
+    BUILD/arch/arm/boot/dts/bcm*.dtb → /boot/
+    BUILD/arch/arm/boot/dts/overlays/*.dtbo → /boot/overlays/
+
+------------------------------------------------------------
+ 7. MODULE INSTALLATION
+------------------------------------------------------------
+
+Modules MUST be installed via:
+
+    sudo make -C $SRC O=$BUILD modules_install
+
+This populates:
+
+    /lib/modules/$(kernelrelease)
+
+The kernelrelease string MUST be obtained via:
+
+    make -s -C $SRC O=$BUILD kernelrelease
+
+------------------------------------------------------------
+ 8. PUMP-MODE DISTRIBUTED BUILD
+------------------------------------------------------------
+
+Pump mode MUST be used for the actual build:
+
+    pump make -C $SRC O=$BUILD -jN
+
+Pump MUST NOT be used for:
+
+    mrproper
+    olddefconfig
+    modules_install
+    dtbs_install
+    install
+
+DISTCC_HOSTS MUST be set to:
+
+    kubenode2/7 kubenode3/7 kubenode4/7 \
+    kubenode5/7 kubenode6/7 kubenode7/7 localhost/2
+
+------------------------------------------------------------
+ 9. CLEAN STATE REQUIREMENTS
+------------------------------------------------------------
+
+A clean state is defined as:
+
+  - SRC contains no generated files
+  - BUILD contains all generated files
+  - BUILD contains .config
+  - olddefconfig completes without error
+  - pump build completes without source-tree pollution
+
+If any violation occurs, restart from:
+
+    kernel-prep.sh
+
+------------------------------------------------------------
+ 10. SAFETY RULES
+------------------------------------------------------------
+
+  - NEVER write .config into SRC.
+  - NEVER run in-tree builds.
+  - NEVER run make without O=.
+  - NEVER install kernel artifacts manually.
+  - NEVER modify /boot outside the build script.
+  - ALWAYS run prep before build.
+  - ALWAYS verify kernelrelease before install.
+  - ALWAYS keep CONFIG under version control.
+
+------------------------------------------------------------
+ 11. 2AM-SAFE RECOVERY
+------------------------------------------------------------
+
+If the build fails:
+
+    1. Stop immediately.
+    2. Run kernel-prep.sh.
+    3. Re-run kernel-build.sh.
+    4. Verify /boot/kernel7.img timestamp.
+    5. Reboot a test node only.
+
+If SRC becomes polluted:
+
+    make -C $SRC mrproper
+
+If BUILD becomes polluted:
+
+    rm -rf $BUILD
+    mkdir $BUILD
+    kernel-prep.sh
+
+------------------------------------------------------------
+ END OF DOCUMENT
+============================================================

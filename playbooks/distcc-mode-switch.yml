@@ -1,6 +1,6 @@
 # /opt/ansible-k3s-cluster/playbooks/distcc-mode-switch.yml
 # Purpose: Switch entire cluster into DISTCC BUILD MODE safely.
-# Behavior: Stops all k3s services, prepares builder, resets workers, and enables tmpfs.
+# Behavior: Stops all k3s services, prepares builder,and  resets workers.
 # Author: Lewis Donofrio
 # Notes: Safe to run at 1am. ASCII-only. Idempotent.
 
@@ -27,24 +27,6 @@
         name: k3s-agent
         state: stopped
       failed_when: false
-
-# --- Enable tmpfs on builder ---
-- name: Enable tmpfs mount for kernel builds
-  hosts: builder
-  become: true
-  gather_facts: false
-  tasks:
-    - name: Ensure tmpfs mountpoint exists
-      ansible.builtin.file:
-        path: /tmp/kernel-build
-        state: directory
-        mode: '0755'
-
-    - name: Enable tmpfs mount unit
-      ansible.builtin.command: systemctl enable 'tmp-kernel\x2dbuild.mount'
-
-    - name: Start tmpfs mount unit
-      ansible.builtin.command: systemctl start 'tmp-kernel\x2dbuild.mount'
 
 # --- Clean builder distcc state ---
 - name: Clean builder state

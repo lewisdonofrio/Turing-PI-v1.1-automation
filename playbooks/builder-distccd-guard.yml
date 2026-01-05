@@ -1,6 +1,6 @@
 # /opt/ansible-k3s-cluster/playbooks/builder-distccd-guard.yml
 # Purpose: Ensure builder is clean and correct for DISTCC BUILD MODE.
-# Behavior: Disables distccd, enforces tmpfs unit integrity, enforces environment.
+# Behavior: Disables distccd,and enforces environment.
 # Author: Lewis Donofrio
 # Notes: Safe to run at 1am. ASCII-only. Idempotent. Self-healing.
 
@@ -21,26 +21,13 @@
       ansible.builtin.command: systemctl disable distccd
       failed_when: false
 
-    - name: Ensure tmpfs mountpoint exists
+    - name: Ensure persistent kernel build directory exists
       ansible.builtin.file:
-        path: /tmp/kernel-build
+        path: /home/builder/kernel-build
         state: directory
+        owner: builder
+        group: builder
         mode: '0755'
-
-    - name: Install canonical tmpfs mount unit
-      ansible.builtin.template:
-        src: /opt/ansible-k3s-cluster/templates/tmp-kernel-build.mount.j2
-        dest: /etc/systemd/system/tmp-kernel\x2dbuild.mount
-        mode: '0644'
-
-    - name: Reload systemd units
-      ansible.builtin.command: systemctl daemon-reload
-
-    - name: Enable tmpfs mount unit
-      ansible.builtin.command: systemctl enable 'tmp-kernel\x2dbuild.mount'
-
-    - name: Start tmpfs mount unit
-      ansible.builtin.command: systemctl start 'tmp-kernel\x2dbuild.mount'
 
     - name: Enforce builder distcc environment
       ansible.builtin.copy:

@@ -1,0 +1,48 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/deploy-k3s-kernel.yml
+# Install custom linux-rpi-6.18-k3s kernel on worker nodes
+# Doctrine:
+#   - Only modifies pacman.conf if repo block missing
+#   - Uses blockinfile for clean, idempotent repo management
+#   - Installs kernel only if needed
+#   - Reboots only when kernel package changes
+#   - ASCII-only, nano-safe, future-maintainer-safe
+
+- name: Deploy custom k3s kernel to worker nodes
+  hosts: kubenodes_workers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    repo_block: |
+      [k3s-kernel]
+      SigLevel = Optional TrustAll
+      Server = http://kubenode1:8080/k3s-kernel
+
+  tasks:
+
+    - name: Ensure pacman.conf contains k3s-kernel repo
+      blockinfile:
+        path: /etc/pacman.conf
+        block: "{{ repo_block }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK: k3s-kernel"
+      register: repo_added
+      notify: pacman_sync
+
+    - name: Install or upgrade custom kernel package
+      pacman:
+        name: linux-rpi-6.18-k3s
+        state: latest
+      register: kernel_installed
+
+    - name: Reboot if kernel package changed
+      reboot:
+        msg: "Rebooting to activate linux-rpi-6.18-k3s kernel"
+        connect_timeout: 5
+        reboot_timeout: 600
+      when: kernel_installed.changed
+
+  handlers:
+
+    - name: pacman_sync
+      command: pacman -Syy

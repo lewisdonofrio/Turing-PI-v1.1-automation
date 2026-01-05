@@ -42,14 +42,6 @@
         state: stopped
         enabled: no
 
-    - name: POWERON | Ensure tmpfs mount exists for kernel build
-      mount:
-        path: /tmp/kernelbuild
-        src: tmpfs
-        fstype: tmpfs
-        opts: size=2G,mode=1777
-        state: mounted
-
     - name: POWERON | Ensure distccd is running on builder
       systemd:
         name: distccd

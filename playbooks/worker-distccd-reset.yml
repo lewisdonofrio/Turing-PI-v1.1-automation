@@ -17,10 +17,6 @@
         state: stopped
       failed_when: false
 
-    - name: Disable k3s-agent
-      ansible.builtin.command: systemctl disable k3s-agent
-      failed_when: false
-
     - name: Stop distccd service
       ansible.builtin.systemd:
         name: distccd
