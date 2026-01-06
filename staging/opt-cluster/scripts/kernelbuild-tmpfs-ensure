@@ -1,0 +1,57 @@
+#!/bin/sh
+#
+# /opt/cluster/scripts/kernelbuild-tmpfs-ensure
+# Ensures the tmpfs mount for kernel builds exists, is configured, enabled,
+# and active. Idempotent and safe to run at boot or manually.
+#
+
+set -eu
+
+UNIT_FILE="/etc/systemd/system/tmp-kernelbuild.mount"
+MOUNTPOINT="/tmp/kernelbuild"
+
+echo "[kernelbuild-tmpfs-ensure] Ensuring mountpoint exists: $MOUNTPOINT"
+if [ ! -d "$MOUNTPOINT" ]; then
+    /usr/bin/mkdir -p "$MOUNTPOINT"
+fi
+
+# Ensure correct ownership and permissions
+/usr/bin/chown builder:builder "$MOUNTPOINT"
+/usr/bin/chmod 0775 "$MOUNTPOINT"
+
+echo "[kernelbuild-tmpfs-ensure] Writing systemd unit: $UNIT_FILE"
+/usr/bin/install -m 0644 /dev/null "$UNIT_FILE"
+
+cat <<'EOF' | /usr/bin/tee "$UNIT_FILE" >/dev/null
+[Unit]
+Description=Tmpfs for kernel build workspace
+Before=local-fs.target
+
+[Mount]
+What=tmpfs
+Where=/tmp/kernelbuild
+Type=tmpfs
+Options=size=6G,mode=0775,uid=builder,gid=builder
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "[kernelbuild-tmpfs-ensure] Reloading systemd"
+/usr/bin/systemctl daemon-reload
+
+echo "[kernelbuild-tmpfs-ensure] Enabling mount unit"
+/usr/bin/systemctl enable tmp-kernelbuild.mount
+
+echo "[kernelbuild-tmpfs-ensure] Starting mount unit"
+/usr/bin/systemctl start tmp-kernelbuild.mount
+
+echo "[kernelbuild-tmpfs-ensure] Verifying mount"
+if /usr/bin/mount | /usr/bin/grep -q "on /tmp/kernelbuild "; then
+    echo "[kernelbuild-tmpfs-ensure] SUCCESS: tmpfs is mounted at /tmp/kernelbuild"
+else
+    echo "[kernelbuild-tmpfs-ensure] ERROR: tmpfs did not mount"
+    exit 1
+fi
+
+exit 0

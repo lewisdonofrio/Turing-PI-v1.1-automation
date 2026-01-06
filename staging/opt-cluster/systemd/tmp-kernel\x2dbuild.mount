@@ -1,0 +1,25 @@
+# =============================================================================
+# File: /opt/cluster/systemd/tmp-kernel\x2dbuild.mount
+# =============================================================================
+# Purpose:
+#   Provide a deterministic tmpfs at /tmp/kernel-build for kernel build output.
+#   ASCII-only. Nano-safe. No tabs. No Unicode. No timestamps.
+#   Safe to install, enable, and inspect at any time of day or night.
+#
+#   This file is the authoritative source. It is installed into:
+#       /etc/systemd/system/tmp-kernel\x2dbuild.mount
+#   Systemd derives this unit name from the path /tmp/kernel-build, escaping
+#   the literal dash as \x2d per systemd mount unit naming rules.
+# =============================================================================
+
+[Unit]
+Description=Tmpfs for kernel build output
+
+[Mount]
+What=tmpfs
+Where=/tmp/kernel-build
+Type=tmpfs
+Options=size=512M,mode=0755
+
+[Install]
+WantedBy=multi-user.target

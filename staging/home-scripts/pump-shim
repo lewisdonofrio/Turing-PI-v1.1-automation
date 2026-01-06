@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+# Ensure pump mode reads the hostfile and injects ,cpp internally
+unset DISTCC_HOSTS || true
+
+# Start include-server if not running
+if ! pgrep -f include-server >/dev/null 2>&1; then
+    include-server-wrapper \
+        --port "/tmp/distcc-pump.$$"/socket \
+        --pid_file "/tmp/distcc-pump.$$"/pid &
+    sleep 1
+fi
+
+# Hand off to real distcc in pump mode
+exec /usr/lib/distcc/bin/distcc "$@"

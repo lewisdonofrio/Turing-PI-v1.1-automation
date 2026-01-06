@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+# =============================================================================
+# File: /opt/cluster/scripts/builder-tmpfs-ensure
+# =============================================================================
+# Purpose:
+#   Ensure the tmpfs mount at /tmp/kernel-build exists, is correct, and is
+#   mounted using the canonical systemd mount unit:
+#       /etc/systemd/system/tmp-kernel\x2dbuild.mount
+#
+# Notes:
+#   - ASCII-only. Nano-safe. No tabs. No Unicode. No timestamps.
+#   - Idempotent: safe to run repeatedly at any time.
+#   - Only sets permissions before the mount is active.
+#   - Never attempts chmod/chown after tmpfs is mounted.
+#   - Designed for deterministic, reproducible builder-mode operation.
+# =============================================================================
+
+UNIT_NAME="tmp-kernel\\x2dbuild.mount"
+UNIT_PATH="/etc/systemd/system/tmp-kernel\\x2dbuild.mount"
+MOUNTPOINT="/tmp/kernel-build"
+
+# Ensure mountpoint directory exists (before mount)
+if [ ! -d "$MOUNTPOINT" ]; then
+    mkdir -p "$MOUNTPOINT"
+    chmod 0755 "$MOUNTPOINT"
+    chown root:root "$MOUNTPOINT"
+fi
+
+# If not mounted yet, set permissions (safe only before mount)
+if ! mountpoint -q "$MOUNTPOINT"; then
+    chmod 0755 "$MOUNTPOINT"
+    chown root:root "$MOUNTPOINT"
+fi
+
+# Sanity check: unit file should exist
+if [ ! -f "$UNIT_PATH" ]; then
+    echo "ERROR: Expected unit file not found: $UNIT_PATH" >&2
+    echo "Hint: run /opt/cluster/bootstrap/install-tmpfs-kernel-build.sh as root." >&2
+    exit 1
+fi
+
+systemctl daemon-reload
+systemctl enable "$UNIT_NAME"
+
+# Start the mount if it is not already active
+if ! mountpoint -q "$MOUNTPOINT"; then
+    systemctl start "$UNIT_NAME"
+fi
