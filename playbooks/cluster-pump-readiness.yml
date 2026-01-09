@@ -1,0 +1,122 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-pump-readiness.yml
+# Purpose: Produce a cluster-wide pump-mode and distcc readiness report.
+# Behavior: Checks pump-mode health on builder, distccd state on workers,
+#           network reachability, cc1 activity, and log tail summaries.
+# Notes: Read-only. ASCII-only. Idempotent. Safe to run at any time.
+
+---
+
+# =============================================================================
+# Builder pump-mode readiness
+# =============================================================================
+- name: Pump-mode readiness on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Pump-mode health
+    # -------------------------------------------------------------------------
+    - name: Validate pump-mode health
+      ansible.builtin.shell: /home/builder/scripts/pumpctl health
+      register: pump_health
+      changed_when: false
+      failed_when: false
+
+    - name: Report pump-mode health
+      ansible.builtin.debug:
+        msg: "pumpctl health: {{ pump_health.stdout | default('unknown') }}"
+
+    # -------------------------------------------------------------------------
+    # include-server process
+    # -------------------------------------------------------------------------
+    - name: Check include-server process
+      ansible.builtin.shell: pgrep -f include-server || true
+      register: include_pid
+      changed_when: false
+
+    - name: Report include-server PID
+      ansible.builtin.debug:
+        msg: "include-server PID: {{ include_pid.stdout | default('none') }}"
+
+    # -------------------------------------------------------------------------
+    # Pump socket directory
+    # -------------------------------------------------------------------------
+    - name: Locate pump socket directory
+      ansible.builtin.shell: ls -td /tmp/distcc-pump.* 2>/dev/null | head -n1
+      register: pump_socket_dir
+      changed_when: false
+
+    - name: Report pump socket directory
+      ansible.builtin.debug:
+        msg: "Pump socket directory: {{ pump_socket_dir.stdout | default('none') }}"
+
+    - name: Check pump socket file
+      ansible.builtin.stat:
+        path: "{{ pump_socket_dir.stdout }}/socket"
+      register: pump_socket_stat
+      failed_when: false
+
+    - name: Report pump socket state
+      ansible.builtin.debug:
+        msg: "Pump socket exists: {{ pump_socket_stat.stat.exists | default(false) }}"
+
+# =============================================================================
+# Worker readiness
+# =============================================================================
+- name: Worker distcc readiness
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # distccd service
+    # -------------------------------------------------------------------------
+    - name: Check distccd service status
+      ansible.builtin.shell: systemctl is-active distccd || true
+      register: distccd_status
+      changed_when: false
+
+    - name: Report distccd service status
+      ansible.builtin.debug:
+        msg: "distccd status: {{ distccd_status.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # distccd listening
+    # -------------------------------------------------------------------------
+    - name: Check if distccd is listening on port 3632
+      ansible.builtin.shell: ss -lntp | grep 3632 || true
+      register: distccd_listen
+      changed_when: false
+
+    - name: Report distccd listening state
+      ansible.builtin.debug:
+        msg: "distccd listening: {{ distccd_listen.stdout | default('no') }}"
+
+    # -------------------------------------------------------------------------
+    # cc1 activity
+    # -------------------------------------------------------------------------
+    - name: Check for cc1 processes
+      ansible.builtin.shell: pgrep -a cc1 || true
+      register: cc1_processes
+      changed_when: false
+
+    - name: Report cc1 activity
+      ansible.builtin.debug:
+        msg: "cc1 activity: {{ cc1_processes.stdout | default('none') }}"
+
+    # -------------------------------------------------------------------------
+    # distccd logs
+    # -------------------------------------------------------------------------
+    - name: Tail last 10 lines of distccd log
+      ansible.builtin.shell: tail -n 10 /var/log/distccd/distccd.log || true
+      register: distccd_log
+      changed_when: false
+
+    - name: Report distccd log tail
+      ansible.builtin.debug:
+        msg: "{{ distccd_log.stdout_lines }}"

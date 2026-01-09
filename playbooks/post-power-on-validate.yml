@@ -1,0 +1,95 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/post-power-on-validate.yml
+# Purpose: Validate cluster readiness after power-on, before any pump-mode activity.
+
+- name: Post power-on validation (builder-local checks)
+  hosts: builder
+  gather_facts: false
+  become: false
+
+  tasks:
+    - name: Ensure distcc hostfile exists
+      ansible.builtin.stat:
+        path: /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
+      register: distcc_hostfile
+
+    - name: Fail if distcc hostfile is missing
+      ansible.builtin.fail:
+        msg: "distcc hostfile missing: /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml"
+      when: not distcc_hostfile.stat.exists
+
+    - name: Read distcc hostfile
+      ansible.builtin.slurp:
+        path: /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
+      register: distcc_hostfile_content
+
+    - name: Parse distcc hosts from YAML (simple hostname extraction)
+      ansible.builtin.set_fact:
+        distcc_hosts_parsed: >-
+          {{
+            distcc_hostfile_content['content'] | b64decode
+            | splitlines()
+            | select('match', '^[ ]*-[ ]+[A-Za-z0-9]')
+            | map('regex_replace', '^[ ]*-[ ]+([^ ]+).*$', '\1')
+            | list
+          }}
+
+    - name: Show parsed distcc hosts
+      ansible.builtin.debug:
+        var: distcc_hosts_parsed
+
+    - name: Fail if no distcc hosts parsed
+      ansible.builtin.fail:
+        msg: "No distcc hosts parsed from distcc-hosts.yml"
+      when: distcc_hosts_parsed | length == 0
+
+
+- name: Post power-on validation (worker checks)
+  hosts: distcc_workers
+  gather_facts: false
+  become: true
+
+  vars:
+    distccd_service_name: distccd
+    distccd_port: 3632
+    distccd_log_path: /var/log/distccd/distccd.log
+
+  tasks:
+    - name: Check distccd systemd service state
+      ansible.builtin.command:
+        cmd: systemctl is-active {{ distccd_service_name }}
+      register: distccd_state
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if distccd is not active
+      ansible.builtin.fail:
+        msg: "distccd is not active on {{ inventory_hostname }}"
+      when: distccd_state.stdout.strip() != "active"
+
+    - name: Check distccd is listening on TCP port {{ distccd_port }}
+      ansible.builtin.command:
+        cmd: ss -lntp
+      register: distccd_sockets
+      changed_when: false
+
+    - name: Fail if distccd is not listening on port {{ distccd_port }}
+      ansible.builtin.fail:
+        msg: "distccd not listening on {{ distccd_port }} on {{ inventory_hostname }}"
+      when: distccd_sockets.stdout is not search(":" ~ distccd_port|string)
+
+    - name: Check for recent distccd log entries (if log file exists)
+      ansible.builtin.shell: |
+        if [ -f "{{ distccd_log_path }}" ]; then
+          tail -n 10 "{{ distccd_log_path }}"
+        else
+          echo "no distccd log at {{ distccd_log_path }}"
+        fi
+      args:
+        executable: /bin/bash
+      register: distccd_log
+      changed_when: false
+
+    - name: Show distccd log summary
+      ansible.builtin.debug:
+        var: distccd_log.stdout

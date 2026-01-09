@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+# ---------------------------------------------------------------------
+#  /home/builder/scripts/pump
+#
+#  Purpose:
+#    Modern, doctrine-aligned pump-mode shim that replaces the legacy
+#    /usr/bin/pump wrapper. This shim:
+#      - never inspects the hostfile for ',cpp'
+#      - never enforces compression
+#      - never rewrites DISTCC_HOSTS
+#      - starts include-server only if needed
+#      - hands off directly to distcc
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - Must NEVER be sourced; only executed.
+#    - Preflight is responsible for starting include-server normally.
+# ---------------------------------------------------------------------
+
+# Pump mode requires DISTCC_HOSTS to be unset
+unset DISTCC_HOSTS || true
+
+# Disable distcc's internal pump launcher; wrapper owns pump-mode
+unset DISTCC_PUMP || true
+
+# If include-server is not running, start it
+if ! pgrep -f include-server >/dev/null 2>&1; then
+    INCLUDE_SERVER_DIR="/tmp/distcc-pump.$$"
+    mkdir -p "${INCLUDE_SERVER_DIR}"
+
+    INCLUDE_SERVER_PORT="${INCLUDE_SERVER_DIR}/socket"
+    export INCLUDE_SERVER_DIR
+    export INCLUDE_SERVER_PORT
+
+    include-server --daemon --port "${INCLUDE_SERVER_PORT}"
+    sleep 1
+fi
+
+# Hand off to real distcc
+exec /usr/bin/distcc "$@"

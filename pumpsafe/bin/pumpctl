@@ -1,0 +1,83 @@
+#!/bin/sh
+# /opt/ansible-k3s-cluster/pumpsafe/bin/pumpctl
+# Simple controller for include_server (pump mode backend).
+
+set -eu
+
+PYTHON_BIN="/usr/bin/python3"
+STATE_DIR="/opt/ansible-k3s-cluster/pumpsafe/state"
+PID_FILE="${STATE_DIR}/include_server.pid"
+LOG_FILE="${STATE_DIR}/include_server.log"
+PORT_FILE="${STATE_DIR}/include_server.port"
+
+mkdir -p "${STATE_DIR}"
+mkdir -p "$(dirname "${LOG_FILE}")"
+
+usage() {
+    echo "Usage: pumpctl {start|stop|status}"
+    exit 1
+}
+
+[ $# -ge 1 ] || usage
+
+CMD="$1"
+shift || true
+
+case "${CMD}" in
+    start)
+        /opt/ansible-k3s-cluster/pumpsafe/bin/pump-python-version.sh || {
+            echo "Python version changed — run pump-restore.sh before starting include_server."
+            exit 1
+        }
+
+        if [ -f "${PID_FILE}" ] && ps -p "$(cat "${PID_FILE}")" >/dev/null 2>&1; then
+            echo "include_server already running (PID $(cat "${PID_FILE}"))."
+            exit 0
+        fi
+
+        TMPDIR="$(mktemp -d /tmp/include-server.XXXXXX)"
+        PORT="${TMPDIR}/socket"
+        echo "${PORT}" > "${PORT_FILE}"
+
+        cd /
+        echo "Starting include_server.run on ${PORT}..."
+        "${PYTHON_BIN}" -m include_server.run include_server.py --port "${PORT}" /usr/bin/gcc \
+            >>"${LOG_FILE}" 2>&1 &
+        PID=$!
+        echo "${PID}" > "${PID_FILE}"
+        echo "include_server started (PID ${PID})."
+        ;;
+    stop)
+        if [ -f "${PID_FILE}" ]; then
+            PID="$(cat "${PID_FILE}")"
+            if ps -p "${PID}" >/dev/null 2>&1; then
+                echo "Stopping include_server (PID ${PID})..."
+                kill "${PID}" 2>/dev/null || true
+                sleep 1 || true
+                if ps -p "${PID}" >/dev/null 2>&1; then
+                    echo "include_server still running; sending SIGKILL..."
+                    kill -9 "${PID}" 2>/dev/null || true
+                fi
+            else
+                echo "include_server PID ${PID} not running."
+            fi
+            rm -f "${PID_FILE}"
+        else
+            echo "include_server not running (no PID file)."
+        fi
+        ;;
+    status)
+        if [ -f "${PID_FILE}" ] && ps -p "$(cat "${PID_FILE}")" >/dev/null 2>&1; then
+            echo "include_server is running (PID $(cat "${PID_FILE}"))."
+            if [ -f "${PORT_FILE}" ]; then
+                echo "Port socket: $(cat "${PORT_FILE}")"
+            fi
+        else
+            echo "include_server is not running."
+            exit 1
+        fi
+        ;;
+    *)
+        usage
+        ;;
+esac

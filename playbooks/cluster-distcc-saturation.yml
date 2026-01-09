@@ -1,16 +1,15 @@
-# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-smoketest.yml
-# Purpose: Perform a real distributed compile smoketest across the cluster.
-# Behavior: Confirms distcc is functional, workers receive jobs, cc1 runs remotely,
-#           pump-mode is healthy, and distributed preprocessing is active.
-# Author: Lewis Donofrio
-# Notes: Run while watching distccmon-text on the builder. ASCII-only. Idempotent.
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-saturation.yml
+# Purpose: Stress-test distcc and pump-mode across the cluster.
+# Behavior: Performs a high-concurrency distributed compile, monitors worker
+#           participation, detects fallback-to-local, and reports saturation.
+# Notes: Read-only except for temporary files. ASCII-only. Idempotent.
 
 ---
 
 # =============================================================================
-# Builder smoketest
+# Builder saturation test
 # =============================================================================
-- name: Distcc smoketest from builder
+- name: Distcc saturation test from builder
   hosts: builder
   become: false
   gather_facts: false
@@ -19,10 +18,11 @@
     - /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
 
   vars:
-    distcc_test_dir: /tmp/distcc-smoketest
-    distcc_test_source: /tmp/distcc-smoketest/hello.c
-    distcc_test_output: /tmp/distcc-smoketest/hello.o
+    sat_dir: /tmp/distcc-saturation
+    sat_source: /tmp/distcc-saturation/test.c
+    sat_output: /tmp/distcc-saturation/test.o
     distcc_hosts_env: "{{ distcc_hosts | join(' ') }}"
+    job_count: 32
 
   tasks:
 
@@ -40,74 +40,58 @@
         msg: "pumpctl health: OK"
 
     # -------------------------------------------------------------------------
-    # Prepare smoketest directory and source file
+    # Prepare saturation directory
     # -------------------------------------------------------------------------
-    - name: Create smoketest directory
+    - name: Create saturation directory
       ansible.builtin.file:
-        path: "{{ distcc_test_dir }}"
+        path: "{{ sat_dir }}"
         state: directory
         mode: '0755'
 
     - name: Install test C source
       ansible.builtin.copy:
-        dest: "{{ distcc_test_source }}"
+        dest: "{{ sat_source }}"
         mode: '0644'
         content: |
-          #include <stdio.h>
           int main(void) {
-              printf("hello from distcc\n");
               return 0;
           }
 
     - name: Clean previous artifacts
       ansible.builtin.file:
-        path: "{{ distcc_test_output }}"
+        path: "{{ sat_output }}"
         state: absent
 
     # -------------------------------------------------------------------------
-    # Run distributed compile (forced distcc)
+    # High-concurrency distributed compile
     # -------------------------------------------------------------------------
-    - name: Run distcc smoketest compile (forced distcc, explicit paths)
+    - name: Run high-concurrency distcc compile
       ansible.builtin.shell: |
         /usr/bin/env \
         PATH="/usr/bin:/bin" \
         DISTCC_HOSTS="{{ distcc_hosts_env }}" \
         DISTCC_VERBOSE=1 \
-        /usr/bin/distcc /usr/bin/gcc -v -c "{{ distcc_test_source }}" -o "{{ distcc_test_output }}"
+        distcc -j {{ job_count }} -c "{{ sat_source }}" -o "{{ sat_output }}" 2>&1
       args:
-        chdir: "{{ distcc_test_dir }}"
+        chdir: "{{ sat_dir }}"
         executable: /bin/bash
-      register: compile_output
+      register: sat_compile
+      changed_when: false
 
-    - name: Report compile output
+    - name: Report saturation compile output
       ansible.builtin.debug:
-        msg: "{{ compile_output.stdout_lines }}"
+        msg: "{{ sat_compile.stdout_lines }}"
 
     # -------------------------------------------------------------------------
-    # Verify object file
-    # -------------------------------------------------------------------------
-    - name: Verify object file exists
-      ansible.builtin.stat:
-        path: "{{ distcc_test_output }}"
-      register: obj_stat
-
-    - name: Report object file status
-      ansible.builtin.debug:
-        msg: "Object file created: {{ obj_stat.stat.exists }}"
-
-    # -------------------------------------------------------------------------
-    # Analyze worker participation from verbose output
+    # Worker participation analysis
     # -------------------------------------------------------------------------
     - name: Extract worker hosts from verbose output
       ansible.builtin.shell: |
-        echo "{{ compile_output.stdout }}" \
-        | grep -oE 'distcc
+        echo "{{ sat_compile.stdout }}" | grep -oE 'distcc
 
 \[.*\]
 
- [^ ]+:3632' \
-        | awk '{print $NF}' \
-        | sed 's/:3632//'
+ [^ ]+:3632' | awk '{print $NF}' | sed 's/:3632//'
       register: worker_hosts
       changed_when: false
 
@@ -118,11 +102,11 @@
           - "Worker count: {{ worker_hosts.stdout_lines | length }}"
 
     # -------------------------------------------------------------------------
-    # Detect fallback-to-local
+    # Fallback detection
     # -------------------------------------------------------------------------
     - name: Detect fallback to localhost
       ansible.builtin.shell: |
-        echo "{{ compile_output.stdout }}" | grep -q "localhost" && echo "fallback" || echo "ok"
+        echo "{{ sat_compile.stdout }}" | grep -q "localhost" && echo "fallback" || echo "ok"
       register: fallback_check
       changed_when: false
 
@@ -131,41 +115,38 @@
         msg: "Fallback to localhost: {{ fallback_check.stdout }}"
 
 # =============================================================================
-# Worker verification (cc1 activity)
+# Worker saturation monitoring
 # =============================================================================
-- name: Check worker cc1 activity
+- name: Monitor worker saturation
   hosts: workers
   become: true
   gather_facts: false
 
   tasks:
 
-    - name: Check for cc1 processes
+    - name: Check cc1 processes
       ansible.builtin.shell: pgrep -a cc1 || true
       register: cc1_processes
-      args:
-        executable: /bin/bash
+      changed_when: false
 
     - name: Report cc1 activity
       ansible.builtin.debug:
-        msg: "Worker {{ inventory_hostname }} cc1: {{ cc1_processes.stdout | default('none') }}"
+        msg: "cc1 activity: {{ cc1_processes.stdout | default('none') }}"
 
-# =============================================================================
-# Worker distccd logs
-# =============================================================================
-- name: Check worker distccd logs
-  hosts: workers
-  become: true
-  gather_facts: false
+    - name: Report worker load average
+      ansible.builtin.shell: cat /proc/loadavg
+      register: worker_load
+      changed_when: false
 
-  tasks:
+    - name: Report worker load
+      ansible.builtin.debug:
+        msg: "Load average: {{ worker_load.stdout }}"
 
-    - name: Tail last 10 lines of distccd log
-      ansible.builtin.shell: tail -n 10 /var/log/distccd/distccd.log || true
+    - name: Tail last 20 lines of distccd log
+      ansible.builtin.shell: tail -n 20 /var/log/distccd/distccd.log || true
       register: distccd_log
-      args:
-        executable: /bin/bash
+      changed_when: false
 
     - name: Report distccd log tail
       ansible.builtin.debug:
-        msg: "Worker {{ inventory_hostname }} log tail: {{ distccd_log.stdout_lines }}"
+        msg: "{{ distccd_log.stdout_lines }}"

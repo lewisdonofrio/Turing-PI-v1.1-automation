@@ -1,0 +1,156 @@
+#!/bin/sh
+# filename: /opt/ansible-k3s-cluster/pumpsafe/bin/pump-restore.sh
+# purpose: Rebuild and reinstall distcc pump-mode from preserved source
+# usage: sudo /opt/ansible-k3s-cluster/pumpsafe/bin/pump-restore.sh
+
+set -eu
+
+PUMPSAFE_ROOT="/opt/ansible-k3s-cluster/pumpsafe"
+SRC="${PUMPSAFE_ROOT}/distcc-pump-src"
+PATCHES_DIR="${PUMPSAFE_ROOT}/patches"
+SITE_PKGS="/usr/lib/python3.13/site-packages"
+PYTHON_BIN="/usr/bin/python3"
+LOG_DIR="/var/log/pump-restore"
+LOG_FILE="${LOG_DIR}/pump-restore-$(date +%Y%m%d-%H%M%S).log"
+
+mkdir -p "${LOG_DIR}"
+exec > >(tee -a "${LOG_FILE}") 2>&1
+
+echo "==> pump-restore.sh starting at $(date)"
+echo "==> Using source tree: ${SRC}"
+echo "==> Using patches dir: ${PATCHES_DIR}"
+echo "==> Using Python: ${PYTHON_BIN}"
+echo "==> Logging to: ${LOG_FILE}"
+
+# ---------------------------------------------------------------------------
+# 1. Python version sentinel
+# ---------------------------------------------------------------------------
+echo "==> Checking Python version..."
+PYTHON_CHANGED=0
+"${PUMPSAFE_ROOT}/bin/pump-python-version.sh" || PYTHON_CHANGED=$?
+
+if [ "${PYTHON_CHANGED}" -eq 2 ]; then
+    echo "==> Python version changed — full rebuild required."
+else
+    echo "==> Python version unchanged."
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Reset source tree
+# ---------------------------------------------------------------------------
+if [ ! -d "${SRC}" ]; then
+    echo "ERROR: Source directory not found: ${SRC}"
+    exit 1
+fi
+
+cd "${SRC}"
+
+echo "==> Resetting source tree to clean state (if git present)..."
+if [ -d .git ]; then
+    git reset --hard HEAD || true
+    git clean -fdx || true
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Apply patches
+# ---------------------------------------------------------------------------
+echo "==> Applying patches (if any)..."
+if [ -d "${PATCHES_DIR}" ]; then
+    for p in "${PATCHES_DIR}"/*.patch; do
+        [ -f "${p}" ] || continue
+        echo "   -> Applying patch: ${p}"
+        patch -p1 < "${p}"
+    done
+else
+    echo "   -> No patches directory found at: ${PATCHES_DIR}"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Build distcc + pump mode
+# ---------------------------------------------------------------------------
+echo "==> Running autogen.sh (if present)..."
+if [ -x ./autogen.sh ]; then
+    ./autogen.sh
+else
+    echo "   -> autogen.sh not found or not executable, assuming configure is present."
+fi
+
+echo "==> Running configure..."
+./configure --prefix=/usr --with-python="${PYTHON_BIN}"
+
+echo "==> Building distcc + pump-mode..."
+make -j"$(nproc)"
+
+echo "==> Installing distcc + pump-mode..."
+make install
+
+# ---------------------------------------------------------------------------
+# 5. Install and link include_server C extension
+# ---------------------------------------------------------------------------
+echo "==> Locating include_server in site-packages..."
+if [ ! -d "${SITE_PKGS}/include_server" ]; then
+    echo "ERROR: include_server not found under ${SITE_PKGS}"
+    exit 1
+fi
+
+echo "==> Locating distcc_pump_c_extensions shared object..."
+EXT="$(find "${SITE_PKGS}/include_server" -maxdepth 1 -name 'distcc_pump_c_extensions*.so' | head -n 1 || true)"
+
+if [ -z "${EXT}" ]; then
+    echo "ERROR: Could not find distcc_pump_c_extensions*.so in ${SITE_PKGS}/include_server"
+    exit 1
+fi
+
+echo "   -> Found C extension: ${EXT}"
+
+ABI_DIR="${SITE_PKGS}/include_server/c_extensions/build/lib.linux-armv7l-cpython-313"
+ABI_SO="${ABI_DIR}/$(basename "${EXT}")"
+
+echo "==> Ensuring ABI-specific directory exists: ${ABI_DIR}"
+mkdir -p "${ABI_DIR}"
+
+echo "==> Linking C extension into ABI-specific path..."
+ln -sf "${EXT}" "${ABI_SO}"
+echo "   -> Linked: ${ABI_SO}"
+
+# ---------------------------------------------------------------------------
+# 6. Verify include_server.run (correct entrypoint)
+# ---------------------------------------------------------------------------
+echo "==> Verifying include_server.run with Python..."
+TMPDIR="$(mktemp -d /tmp/pump-restore.XXXXXX)"
+PORT="${TMPDIR}/socket"
+
+cd /
+
+echo "   -> Starting include_server.run..."
+"${PYTHON_BIN}" -m include_server.run include_server.py --port "${PORT}" /usr/bin/gcc &
+PID=$!
+sleep 2
+
+if ps -p "${PID}" >/dev/null 2>&1; then
+    echo "   -> include_server is running (PID ${PID}), pump-mode backend OK."
+    kill "${PID}" 2>/dev/null || true
+else
+    echo "ERROR: include_server did not stay running. Check logs above."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Install pump-mode shims
+# ---------------------------------------------------------------------------
+echo "==> Installing pump-mode shims into /usr/local/bin..."
+
+SHIMS_DIR="${PUMPSAFE_ROOT}/shims"
+
+if [ -d "${SHIMS_DIR}" ]; then
+    for s in "${SHIMS_DIR}"/*; do
+        [ -f "${s}" ] || continue
+        echo "   -> Installing shim: $(basename "${s}")"
+        install -m 0755 "${s}" /usr/local/bin/
+    done
+else
+    echo "   -> No shims directory found at ${SHIMS_DIR}"
+fi
+
+echo "==> pump-restore.sh completed successfully at $(date)"
+exit 0

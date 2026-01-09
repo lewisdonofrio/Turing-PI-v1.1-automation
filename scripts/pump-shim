@@ -1,7 +1,9 @@
 #!/bin/sh
-# file: /opt/ansible-k3s-cluster/staging/home-scripts/pump-shim
+# file: /home/builder/scripts/pump-shim
 # purpose: Launch include-server for pump-mode and hand off to real distcc.
-# notes: Canonical shim for pump-mode on ArchLinuxARM. No tabs, ASCII-only.
+# notes: Canonical shim for pump-mode on ArchLinuxARM. Must be kept in sync
+#        with /opt/ansible-k3s-cluster/staging/home-scripts/pump-shim.
+#        No tabs, ASCII-only.
 
 set -eu
 

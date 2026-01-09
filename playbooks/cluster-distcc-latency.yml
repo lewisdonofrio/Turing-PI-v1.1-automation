@@ -1,0 +1,79 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-latency.yml
+# Purpose: Measure network latency and MTU characteristics affecting distcc.
+# Behavior: Read-only. Measures RTT, TCP handshake latency, MTU path, and
+#           distccd port responsiveness for all workers.
+# Notes: Safe to run at any time. ASCII-only. Idempotent.
+
+---
+
+# =============================================================================
+# Builder latency tests to all workers
+# =============================================================================
+- name: Distcc latency impact test
+  hosts: builder
+  become: false
+  gather_facts: false
+
+  vars_files:
+    - /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
+
+  tasks:
+
+    - name: Report builder hostname
+      ansible.builtin.debug:
+        msg: "Builder: {{ inventory_hostname }}"
+
+    # -------------------------------------------------------------------------
+    # ICMP RTT tests
+    # -------------------------------------------------------------------------
+    - name: Ping each worker (ICMP RTT)
+      ansible.builtin.shell: ping -c 5 -W 1 {{ item }} || true
+      loop: "{{ distcc_hosts }}"
+      register: ping_results
+      changed_when: false
+
+    - name: Report ICMP RTT results
+      ansible.builtin.debug:
+        var: ping_results.results
+
+    # -------------------------------------------------------------------------
+    # TCP handshake latency (SYN timing)
+    # -------------------------------------------------------------------------
+    - name: Measure TCP handshake latency to distccd port
+      ansible.builtin.shell: |
+        /usr/bin/time -f "%e" bash -c "echo > /dev/tcp/{{ item }}/3632" 2>&1 || true
+      loop: "{{ distcc_hosts }}"
+      register: tcp_latency
+      changed_when: false
+
+    - name: Report TCP handshake latency
+      ansible.builtin.debug:
+        var: tcp_latency.results
+
+    # -------------------------------------------------------------------------
+    # MTU path discovery
+    # -------------------------------------------------------------------------
+    - name: Perform MTU path discovery (DF bit set)
+      ansible.builtin.shell: |
+        ping -M do -s 1472 -c 3 {{ item }} || true
+      loop: "{{ distcc_hosts }}"
+      register: mtu_discovery
+      changed_when: false
+
+    - name: Report MTU path results
+      ansible.builtin.debug:
+        var: mtu_discovery.results
+
+    # -------------------------------------------------------------------------
+    # distccd port responsiveness
+    # -------------------------------------------------------------------------
+    - name: Check distccd port responsiveness
+      ansible.builtin.shell: |
+        timeout 1 bash -c "echo > /dev/tcp/{{ item }}/3632" && echo "open" || echo "closed"
+      loop: "{{ distcc_hosts }}"
+      register: port_check
+      changed_when: false
+
+    - name: Report distccd port state
+      ansible.builtin.debug:
+        var: port_check.results

@@ -1,0 +1,75 @@
+#!/bin/sh
+# pumpctl
+# Control script for pump-mode include_server backend
+# Usage: pumpctl start|stop|status
+
+set -eu
+
+PYTHON_BIN="/usr/bin/python3"
+SITE_PKGS="/usr/lib/python3.13/site-packages"
+LOG_DIR="/var/log/pump-restore"
+STATE_DIR="/run/pump-mode"
+INCLUDE_SERVER_PORT="${STATE_DIR}/socket"
+PID_FILE="${STATE_DIR}/include_server.pid"
+
+cmd="${1:-status}"
+
+mkdir -p "${LOG_DIR}"
+sudo mkdir -p "${STATE_DIR}"
+sudo chown "${USER}:${USER}" "${STATE_DIR}" 2>/dev/null || true
+
+case "${cmd}" in
+  start)
+    if [ -f "${PID_FILE}" ] && ps -p "$(cat "${PID_FILE}")" >/dev/null 2>&1; then
+        echo "include_server already running (PID $(cat "${PID_FILE}"))"
+        exit 0
+    fi
+
+    echo "Starting include_server..."
+    LOG_FILE="${LOG_DIR}/include_server-$(date +%Y%m%d-%H%M%S).log"
+
+    "${PYTHON_BIN}" -m include_server.run \
+        --port "${INCLUDE_SERVER_PORT}" \
+        -- /usr/bin/gcc \
+        >>"${LOG_FILE}" 2>&1 &
+
+    PID=$!
+    echo "${PID}" > "${PID_FILE}"
+
+    sleep 2
+    if ps -p "${PID}" >/dev/null 2>&1; then
+        echo "include_server started (PID ${PID}, port ${INCLUDE_SERVER_PORT})"
+        exit 0
+    else
+        echo "ERROR: include_server failed to stay running; see ${LOG_FILE}"
+        exit 1
+    fi
+    ;;
+
+  stop)
+    if [ -f "${PID_FILE}" ]; then
+        PID="$(cat "${PID_FILE}")"
+        if ps -p "${PID}" >/dev/null 2>&1; then
+            echo "Stopping include_server (PID ${PID})..."
+            kill "${PID}" 2>/dev/null || true
+        fi
+        rm -f "${PID_FILE}"
+    else
+        echo "include_server not running (no PID file)"
+    fi
+    ;;
+
+  status)
+    if [ -f "${PID_FILE}" ] && ps -p "$(cat "${PID_FILE}")" >/dev/null 2>&1; then
+        echo "include_server running (PID $(cat "${PID_FILE}"), port ${INCLUDE_SERVER_PORT})"
+    else
+        echo "include_server not running"
+        exit 1
+    fi
+    ;;
+
+  *)
+    echo "Usage: $0 start|stop|status"
+    exit 1
+    ;;
+esac

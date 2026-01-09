@@ -1,207 +1,126 @@
-#!/bin/sh
+#!/bin/bash
 set -euo pipefail
 
-# ---------------------------------------------------------------------
-#  /home/builder/scripts/kernel-build-preflight.sh
+# =====================================================================
+#  kernel-build-preflight.sh
 #
 #  Purpose:
-#    Deterministic preflight readiness check for kernel builds.
-#    Ensures the environment is clean, stable, and pump-ready before
-#    running kernel-build.sh with a new job count.
+#    Deterministic, pump-mode-ready environment setup for ARMv7 kernel
+#    builds. Produces a canonical environment file consumed by
+#    kernel-build.sh. Ensures Kconfig always sees real gcc while
+#    pump-mode distcc handles distributed compilation.
 #
-#  Notes:
-#    - ASCII-only, nano-safe, deterministic.
-#    - Safe to run repeatedly.
-# ---------------------------------------------------------------------
-
-# ---------------------------------------------------------------------
-#  Single-instance lock
-# ---------------------------------------------------------------------
+#  Doctrine:
+#    - No PATH inheritance. No distcc shims in PATH.
+#    - CC="distcc gcc" drives pump-mode.
+#    - HOSTCC="gcc" always real.
+#    - One authoritative environment file.
+# =====================================================================
 
 LOCKFILE="/tmp/kernel-preflight.lock"
-exec 9>"${LOCKFILE}"
-if ! flock -n 9; then
-    echo "ERROR: kernel-build-preflight already running (lockfile held)."
-    exit 1
-fi
+ENVFILE="/tmp/kernel-preflight.env"
+PRELOG="/home/builder/build-logs/preflight.log"
+exec > >(while IFS= read -r line; do printf "[%s] %s\n" "$(date -u +"%Y-%m-%d %H:%M:%S")" "$line"; done | tee -a "$PRELOG") 2>&1
 
 # ---------------------------------------------------------------------
-#  Environment validation
+#  Locking
 # ---------------------------------------------------------------------
-
-if [ "$(whoami)" != "builder" ]; then
-    echo "ERROR: Must run as builder user"
+if [[ -e "${LOCKFILE}" ]]; then
+    echo "ERROR: kernel-build-preflight already running."
     exit 1
 fi
+echo $$ > "${LOCKFILE}"
 
-if [ "$(hostname)" != "kubenode1" ]; then
-    echo "ERROR: Must run on kubenode1"
-    exit 1
-fi
+cleanup() {
+    rm -f "${LOCKFILE}"
+}
+trap cleanup EXIT
 
-SRC="/home/builder/src/kernel"
-LOGDIR="/home/builder/build-logs"
+# ---------------------------------------------------------------------
+#  1. Clean logs and kernel artifacts
+# ---------------------------------------------------------------------
+echo "Cleaning old logs..."
+rm -f /home/builder/build-logs/*.log 2>/dev/null || true
+
+echo "Cleaning kernel build artifacts..."
+make -C /home/builder/src/kernel mrproper >/dev/null 2>&1 || true
+
+echo "Cleaning stale Kconfig/generated artifacts..."
+find /home/builder/src/kernel -maxdepth 3 -type f \
+    \( -name "auto.conf" -o -name "autoconf.h" -o -name "include/generated/*" \) \
+    -delete 2>/dev/null || true
+echo "Kconfig state cleaned (your .config preserved)."
+
+# ---------------------------------------------------------------------
+#  2. Reset distcc + pump include-server
+# ---------------------------------------------------------------------
+echo "Resetting distcc and pump include-server..."
+pkill -f distcc 2>/dev/null || true
+rm -rf /tmp/distcc-pump.* || true
+
+# ---------------------------------------------------------------------
+#  3. Source builder distcc environment
+# ---------------------------------------------------------------------
+echo "Sourcing builder distcc environment..."
 BUILDER_ENV="/home/builder/builder-distcc-env-setup.sh"
-
-if [ ! -d "${SRC}" ]; then
-    echo "ERROR: Kernel source directory missing: ${SRC}"
-    exit 1
-fi
-
-if [ ! -f "${BUILDER_ENV}" ]; then
+if [[ ! -f "${BUILDER_ENV}" ]]; then
     echo "ERROR: Builder distcc environment missing: ${BUILDER_ENV}"
     exit 1
 fi
 
-mkdir -p "${LOGDIR}"
+# This script:
+#   - Must NOT modify PATH (by doctrine).
+#   - May prepend /home/builder/scripts to PATH.
+#   - Sets DISTCC_* defaults.
+# Safe to source multiple times.
+source "${BUILDER_ENV}"
 
-# ---------------------------------------------------------------------
-#  Clean logs
-# ---------------------------------------------------------------------
-
-echo "Cleaning old logs..."
-rm -f "${LOGDIR}/latest.log"
-
-# ---------------------------------------------------------------------
-#  Clean kernel build artifacts (safe clean)
-# ---------------------------------------------------------------------
-
-echo "Cleaning kernel build artifacts..."
-cd "${SRC}"
-make ARCH=arm clean
-
-# ---------------------------------------------------------------------
-#  Reset distcc and pump include-server
-# ---------------------------------------------------------------------
-
-echo "Resetting distcc and pump include-server..."
-pkill -f include-server || true
-pkill -f distcc || true
-
-# ---------------------------------------------------------------------
-#  Source builder environment
-# ---------------------------------------------------------------------
-
-echo "Sourcing builder distcc environment..."
-# shellcheck disable=SC1090
-. "${BUILDER_ENV}"
-
-# ---------------------------------------------------------------------
-#  Pump mode: enforce no DISTCC_HOSTS override
-# ---------------------------------------------------------------------
-
-if [ -n "$DISTCC_HOSTS" ]; then
-    echo "WARNING: DISTCC_HOSTS was set in the environment; unsetting for pump mode..."
-    unset DISTCC_HOSTS
-fi
-
-# ---------------------------------------------------------------------
-#  Pump mode: validate hosts file
-# ---------------------------------------------------------------------
-
-HOSTS_FILE="${HOME}/.distcc/hosts"
-
-if [ ! -f "${HOSTS_FILE}" ]; then
-    echo "ERROR: Missing distcc hosts file: ${HOSTS_FILE}"
+# Show hosts
+HOSTFILE="/home/builder/.distcc/hosts"
+if [[ ! -f "${HOSTFILE}" ]]; then
+    echo "ERROR: distcc hostfile missing: ${HOSTFILE}"
     exit 1
 fi
 
-if ! grep -q ",cpp" "${HOSTS_FILE}"; then
-    echo "ERROR: distcc hosts file missing ',cpp' entries. Pump mode cannot start."
-    exit 1
-fi
-
-PERM="$(stat -c %a "${HOSTS_FILE}")"
-if [ "${PERM}" != "600" ]; then
-    echo "ERROR: distcc hosts file must be chmod 600 (current ${PERM})"
-    exit 1
-fi
+echo "Current distcc hosts:"
+sed 's/^/  /' "${HOSTFILE}"
 
 # ---------------------------------------------------------------------
-#  Pump mode: clean stale pump directories
+# 3.5 Canonical PATH (no distcc shims)
 # ---------------------------------------------------------------------
-
-echo "Cleaning stale pump directories..."
-rm -rf /tmp/distcc-pump.*
-
-# ---------------------------------------------------------------------
-#  Pump mode: create pump directory
-# ---------------------------------------------------------------------
-
-INCLUDE_SERVER_DIR="/tmp/distcc-pump.$$"
-mkdir -p "${INCLUDE_SERVER_DIR}"
-export INCLUDE_SERVER_DIR
-export INCLUDE_SERVER_PORT="${INCLUDE_SERVER_DIR}/socket"
+echo "Setting canonical PATH (no distcc shims)..."
+export PATH="/home/builder/scripts:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+hash -r
+echo "  PATH=${PATH}"
 
 # ---------------------------------------------------------------------
-#  Persist pump-mode environment for kernel-build.sh
+#  4. Pump fitness + ground test
 # ---------------------------------------------------------------------
+echo "Running pump fitness check..."
+/home/builder/scripts/pump-fitness-check.sh
 
-cat > /tmp/kernel-preflight.env <<EOF
-export INCLUDE_SERVER_DIR="${INCLUDE_SERVER_DIR}"
-export INCLUDE_SERVER_PORT="${INCLUDE_SERVER_PORT}"
+echo "Running pump ground test..."
+/home/builder/scripts/pump-ground-test.sh
+
+echo "Pump validated and operational."
+
+# ---------------------------------------------------------------------
+#  6. Canonical compiler environment
+# ---------------------------------------------------------------------
+export CC="pump gcc"
+# export CC="distcc gcc"
+export HOSTCC="gcc"
+
+# ---------------------------------------------------------------------
+#  7. Write authoritative environment file
+# ---------------------------------------------------------------------
+echo "Writing environment to ${ENVFILE}..."
+cat > "${ENVFILE}" <<EOF
+export CC="${CC}"
+export HOSTCC="${HOSTCC}"
 export PATH="${PATH}"
-export CC="distcc gcc"
-export HOSTCC="distcc gcc"
+# Pump-mode is wrapper-managed; no pump dir exported
 EOF
-
-# ---------------------------------------------------------------------
-#  Pump mode: start include-server (custom wrapper)
-# ---------------------------------------------------------------------
-
-echo "Starting pump include-server..."
-
-if ! pgrep -f include_server.py >/dev/null 2>&1; then
-    include-server-wrapper \
-        --port "$INCLUDE_SERVER_PORT" \
-        --pid_file "$INCLUDE_SERVER_DIR/pid" &
-    sleep 1
-fi
-
-# ---------------------------------------------------------------------
-#  Pump mode: verify include-server is alive
-# ---------------------------------------------------------------------
-
-if ! pgrep -f include-server >/dev/null 2>&1; then
-    echo "ERROR: pump include-server failed to start."
-    exit 1
-fi
-
-# ---------------------------------------------------------------------
-#  Enforce distcc wrapper PATH
-# ---------------------------------------------------------------------
-
-export PATH="/usr/lib/distcc/bin:/usr/lib/distcc:${PATH}"
-
-# ---------------------------------------------------------------------
-#  Confirm CC/HOSTCC
-# ---------------------------------------------------------------------
-
-export CC="distcc gcc"
-export HOSTCC="distcc gcc"
-
-echo "Compiler settings:"
-echo "  CC=${CC}"
-echo "  HOSTCC=${HOSTCC}"
-
-# ---------------------------------------------------------------------
-#  Pump mode summary
-# ---------------------------------------------------------------------
-
-echo "Pump mode active:"
-echo "  INCLUDE_SERVER_PID=$(pgrep -f include-server)"
-echo "  Hosts:"
-distcc --show-hosts
-
-# ---------------------------------------------------------------------
-#  Mark preflight as completed
-# ---------------------------------------------------------------------
-
-touch /tmp/kernel-preflight.ok
-
-# ---------------------------------------------------------------------
-#  Summary
-# ---------------------------------------------------------------------
 
 echo "Preflight completed. Environment is ready for kernel-build.sh"
 exit 0

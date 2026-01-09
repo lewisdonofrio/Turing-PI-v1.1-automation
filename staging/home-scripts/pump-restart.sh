@@ -3,21 +3,30 @@
 # File: /home/builder/scripts/pump-restart.sh
 # =============================================================================
 # Purpose:
-#   Restart distcc-pump include server and validate health.
+#   Restart shim-based distcc-pump include-server and validate health.
 #
 # Usage:
 #   /home/builder/scripts/pump-restart.sh
+#
+# Notes:
+#   This script no longer calls "pump --startup" or "pump --shutdown".
+#   The system pump binary is not used. The shim architecture controls
+#   include-server directly. No tabs, ASCII-only.
 # =============================================================================
 
 set -eu
 
+PUMP_SHIM="/usr/local/lib/distcc-pump/pump-shim"
 PUMP_HEALTH="/home/builder/scripts/pump-health.sh"
 
 echo "pump-restart: shutting down existing pump (if any)..."
-pump --shutdown || true
+pkill -f include-server || true
+sleep 1
 
-echo "pump-restart: starting pump..."
-pump --startup
+echo "pump-restart: starting pump via shim..."
+# Invoke shim once to trigger include-server startup
+"${PUMP_SHIM}" --version >/dev/null 2>&1 || true
+sleep 1
 
 echo "pump-restart: checking pump health..."
 if ! "${PUMP_HEALTH}"; then

@@ -1,0 +1,135 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-diagnose.yml
+# Purpose: Perform a full diagnostic sweep of all distcc workers.
+# Behavior: Read-only. Detects common distccd and cc1 failure modes, network
+#           issues, resource constraints, and configuration drift.
+# Notes: Safe to run at any time. ASCII-only. Idempotent.
+
+---
+
+- name: Distcc worker auto-diagnosis
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    # =============================================================================
+    # Systemd and process checks
+    # =============================================================================
+    - name: Check distccd service status
+      ansible.builtin.shell: systemctl is-active distccd || true
+      register: distccd_status
+      changed_when: false
+
+    - name: Report distccd service status
+      ansible.builtin.debug:
+        msg: "distccd status: {{ distccd_status.stdout }}"
+
+    - name: Check distccd ExecStart
+      ansible.builtin.shell: |
+        systemctl cat distccd | sed -n '/^
+
+\[Service\]
+
+/,/^
+
+\[/{p}' | grep ExecStart || true
+      register: distccd_exec
+      changed_when: false
+
+    - name: Report distccd ExecStart
+      ansible.builtin.debug:
+        var: distccd_exec.stdout_lines
+
+    - name: Check for cc1 processes
+      ansible.builtin.shell: pgrep -a cc1 || true
+      register: cc1_processes
+      changed_when: false
+
+    - name: Report cc1 activity
+      ansible.builtin.debug:
+        msg: "cc1 activity: {{ cc1_processes.stdout | default('none') }}"
+
+    # =============================================================================
+    # Network checks
+    # =============================================================================
+    - name: Check if distccd is listening on port 3632
+      ansible.builtin.shell: ss -lntp | grep 3632 || true
+      register: distccd_listen
+      changed_when: false
+
+    - name: Report distccd listening state
+      ansible.builtin.debug:
+        msg: "distccd listening: {{ distccd_listen.stdout | default('no') }}"
+
+    - name: Report MTU for all interfaces
+      ansible.builtin.shell: ip link | grep mtu
+      register: mtu_out
+      changed_when: false
+
+    - name: Report MTU
+      ansible.builtin.debug:
+        msg: "{{ mtu_out.stdout }}"
+
+    # =============================================================================
+    # Resource checks
+    # =============================================================================
+    - name: Report load average
+      ansible.builtin.shell: cat /proc/loadavg
+      register: loadavg
+      changed_when: false
+
+    - name: Report worker load
+      ansible.builtin.debug:
+        msg: "Load average: {{ loadavg.stdout }}"
+
+    - name: Report free memory
+      ansible.builtin.shell: free -h || true
+      register: mem_out
+      changed_when: false
+
+    - name: Report memory state
+      ansible.builtin.debug:
+        msg: "{{ mem_out.stdout_lines }}"
+
+    - name: Report disk space
+      ansible.builtin.shell: df -h / || true
+      register: disk_out
+      changed_when: false
+
+    - name: Report disk usage
+      ansible.builtin.debug:
+        msg: "{{ disk_out.stdout_lines }}"
+
+    # =============================================================================
+    # Log checks
+    # =============================================================================
+    - name: Tail last 20 lines of distccd log
+      ansible.builtin.shell: tail -n 20 /var/log/distccd/distccd.log || true
+      register: distccd_log
+      changed_when: false
+
+    - name: Report distccd log tail
+      ansible.builtin.debug:
+        msg: "{{ distccd_log.stdout_lines }}"
+
+    # =============================================================================
+    # Configuration drift checks
+    # =============================================================================
+    - name: Check distcc symlink directory
+      ansible.builtin.stat:
+        path: /usr/lib/distcc
+      register: distcc_dir
+
+    - name: Report distcc symlink directory
+      ansible.builtin.debug:
+        msg: "distcc symlink dir exists: {{ distcc_dir.stat.exists }}"
+
+    - name: Check for gcc/g++ symlinks
+      ansible.builtin.shell: ls -l /usr/lib/distcc || true
+      register: symlink_list
+      changed_when: false
+
+    - name: Report symlink list
+      ansible.builtin.debug:
+        var: symlink_list.stdout_lines

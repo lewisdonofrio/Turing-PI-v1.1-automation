@@ -1,0 +1,17 @@
+diff --git a/src/util.c b/src/util.c
+index 9e12169..019a0a1 100644
+--- a/src/util.c
++++ b/src/util.c
+@@ -663,10 +663,10 @@ static int dcc_get_proc_meminfo_mem_available(FILE* f) {
+     switch (magnitude) {
+         case 'T':
+             mem_available *= 1024;
+-            /* fallthrough */
++            /* fall through */
+         case 'G':
+             mem_available *= 1024;
+-            /* fallthrough */
++            /* fall through */
+         case 'M':
+             break;
+         case 'K':

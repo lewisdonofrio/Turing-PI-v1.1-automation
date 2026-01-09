@@ -1,0 +1,133 @@
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-benchmark.yml
+# Purpose: Benchmark distributed compilation performance across the cluster.
+# Behavior: Measures compile time, worker participation, fallback behavior,
+#           and produces a numeric performance score.
+# Notes: Read-only except for temporary files. ASCII-only. Idempotent.
+
+---
+
+# =============================================================================
+# Builder benchmark
+# =============================================================================
+- name: Distcc benchmark from builder
+  hosts: builder
+  become: false
+  gather_facts: false
+
+  vars_files:
+    - /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
+
+  vars:
+    bench_dir: /tmp/distcc-benchmark
+    bench_source: /tmp/distcc-benchmark/bench.c
+    bench_output: /tmp/distcc-benchmark/bench.o
+    distcc_hosts_env: "{{ distcc_hosts | join(' ') }}"
+    job_count: 16
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # Pump-mode readiness
+    # -------------------------------------------------------------------------
+    - name: Validate pump-mode health
+      ansible.builtin.shell: /home/builder/scripts/pumpctl health
+      register: pump_health
+      changed_when: false
+      failed_when: pump_health.rc != 0
+
+    - name: Report pump-mode health
+      ansible.builtin.debug:
+        msg: "pumpctl health: OK"
+
+    # -------------------------------------------------------------------------
+    # Prepare benchmark directory
+    # -------------------------------------------------------------------------
+    - name: Create benchmark directory
+      ansible.builtin.file:
+        path: "{{ bench_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Install benchmark C source
+      ansible.builtin.copy:
+        dest: "{{ bench_source }}"
+        mode: '0644'
+        content: |
+          int main(void) {
+              int x = 0;
+              for (int i = 0; i < 10000000; i++) {
+                  x += i;
+              }
+              return x;
+          }
+
+    - name: Clean previous artifacts
+      ansible.builtin.file:
+        path: "{{ bench_output }}"
+        state: absent
+
+    # -------------------------------------------------------------------------
+    # Timed distributed compile
+    # -------------------------------------------------------------------------
+    - name: Run timed distributed compile
+      ansible.builtin.shell: |
+        /usr/bin/time -f "%e" \
+        /usr/bin/env \
+        PATH="/usr/bin:/bin" \
+        DISTCC_HOSTS="{{ distcc_hosts_env }}" \
+        DISTCC_VERBOSE=1 \
+        distcc -j {{ job_count }} -c "{{ bench_source }}" -o "{{ bench_output }}" 2>&1
+      args:
+        chdir: "{{ bench_dir }}"
+        executable: /bin/bash
+      register: bench_compile
+      changed_when: false
+
+    - name: Report benchmark compile output
+      ansible.builtin.debug:
+        msg: "{{ bench_compile.stdout_lines }}"
+
+    # -------------------------------------------------------------------------
+    # Extract benchmark score
+    # -------------------------------------------------------------------------
+    - name: Extract compile time (seconds)
+      ansible.builtin.shell: |
+        echo "{{ bench_compile.stderr }}" | grep -oE '[0-9]+\.[0-9]+' | head -n1
+      register: bench_time
+      changed_when: false
+
+    - name: Report benchmark time
+      ansible.builtin.debug:
+        msg: "Benchmark compile time: {{ bench_time.stdout }} seconds"
+
+    # -------------------------------------------------------------------------
+    # Worker participation
+    # -------------------------------------------------------------------------
+    - name: Extract worker hosts from verbose output
+      ansible.builtin.shell: |
+        echo "{{ bench_compile.stdout }}" | grep -oE 'distcc
+
+\[.*\]
+
+ [^ ]+:3632' | awk '{print $NF}' | sed 's/:3632//'
+      register: worker_hosts
+      changed_when: false
+
+    - name: Report worker participation
+      ansible.builtin.debug:
+        msg:
+          - "Workers used: {{ worker_hosts.stdout_lines }}"
+          - "Worker count: {{ worker_hosts.stdout_lines | length }}"
+
+    # -------------------------------------------------------------------------
+    # Fallback detection
+    # -------------------------------------------------------------------------
+    - name: Detect fallback to localhost
+      ansible.builtin.shell: |
+        echo "{{ bench_compile.stdout }}" | grep -q "localhost" && echo "fallback" || echo "ok"
+      register: fallback_check
+      changed_when: false
+
+    - name: Report fallback state
+      ansible.builtin.debug:
+        msg: "Fallback to localhost: {{ fallback_check.stdout }}"

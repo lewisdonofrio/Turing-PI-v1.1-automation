@@ -1,0 +1,74 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/pump-start.yml
+# Purpose: Start pump-mode on builder (include-server, socket, pumpctl health).
+
+- name: Start pump-mode on builder
+  hosts: builder
+  gather_facts: false
+  become: true
+  become_user: builder
+
+  vars:
+    include_server_cmd: "/usr/bin/include-server"
+    pumpctl_script: "/home/builder/scripts/pumpctl"
+    distcc_hosts_file: "/opt/ansible-k3s-cluster/manifest/distcc-hosts.yml"
+    distcc_pump_env_file: "/home/builder/distcc-pump-env.sh"
+
+  tasks:
+    - name: Ensure distcc hostfile exists
+      ansible.builtin.stat:
+        path: "{{ distcc_hosts_file }}"
+      register: hostfile_stat
+
+    - name: Fail if distcc hostfile is missing
+      ansible.builtin.fail:
+        msg: "distcc hostfile missing at {{ distcc_hosts_file }}"
+      when: not hostfile_stat.stat.exists
+
+    - name: Ensure pumpctl exists and is executable
+      ansible.builtin.stat:
+        path: "{{ pumpctl_script }}"
+      register: pumpctl_stat
+
+    - name: Fail if pumpctl is missing or not executable
+      ansible.builtin.fail:
+        msg: "pumpctl missing or not executable at {{ pumpctl_script }}"
+      when: not pumpctl_stat.stat.exists or not pumpctl_stat.stat.executable
+
+    - name: Export pump-related environment (DISTCC_HOSTS, etc.)
+      ansible.builtin.shell: |
+        cat > "{{ distcc_pump_env_file }}" << 'EOF'
+        export DISTCC_HOSTS="$(grep -E '^[ ]*-[ ]+[A-Za-z0-9]' "{{ distcc_hosts_file }}" | awk '{print $2}')"
+        export DISTCC_VERBOSE=0
+        # Add any other pump/distcc env exports here as needed.
+        EOF
+      args:
+        executable: /bin/bash
+      register: pump_env_written
+      changed_when: pump_env_written.rc == 0
+
+    - name: Start include-server via wrapper
+      ansible.builtin.shell: |
+        . "{{ distcc_pump_env_file }}"
+        include-server-wrapper \
+          --port "/tmp/distcc-pump.$$"/socket \
+          --pid_file "/tmp/distcc-pump.$$"/pid &
+        sleep 2
+      args:
+        executable: /bin/bash
+      register: include_server_start
+      changed_when: true
+
+    - name: Check pumpctl health
+      ansible.builtin.shell: |
+        . "{{ distcc_pump_env_file }}"
+        "{{ pumpctl_script }}" health
+      args:
+        executable: /bin/bash
+      register: pump_health
+      changed_when: false
+      failed_when: pump_health.rc != 0
+
+    - name: Show pumpctl health output
+      ansible.builtin.debug:
+        var: pump_health.stdout

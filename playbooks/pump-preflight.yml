@@ -1,0 +1,67 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/pump-preflight.yml
+# Purpose: Prepare builder environment for pump-mode without starting pump.
+
+- name: Pump preflight (builder-only)
+  hosts: builder
+  gather_facts: false
+  become: true
+  become_user: builder
+
+  vars:
+    pump_tmp_glob: "/tmp/distcc-pump.*"
+    include_server_pattern: "include-server"
+    distcc_validate_script: "/home/builder/scripts/distcc-validate.sh"
+
+  tasks:
+    - name: Ensure distcc-validate script exists
+      ansible.builtin.stat:
+        path: "{{ distcc_validate_script }}"
+      register: distcc_validate_stat
+
+    - name: Fail if distcc-validate.sh is missing
+      ansible.builtin.fail:
+        msg: "distcc-validate.sh missing at {{ distcc_validate_script }}"
+      when: not distcc_validate_stat.stat.exists
+
+    - name: Ensure distcc-validate.sh is not accidentally executable-required here
+      ansible.builtin.debug:
+        msg: "distcc-validate.sh will be used later for active pump checks."
+
+    - name: Kill any stale include-server processes
+      ansible.builtin.shell: |
+        pgrep -f '{{ include_server_pattern }}' >/dev/null 2>&1 && \
+          pkill -f '{{ include_server_pattern }}' || \
+          exit 0
+      args:
+        executable: /bin/bash
+      register: killed_includes
+      changed_when: killed_includes.rc == 0
+      failed_when: false
+
+    - name: Remove stale pump directories
+      ansible.builtin.shell: |
+        for d in {{ pump_tmp_glob }}; do
+          [ -d "$d" ] && rm -rf "$d"
+        done
+      args:
+        executable: /bin/bash
+      register: pump_dirs_cleanup
+      changed_when: pump_dirs_cleanup.rc == 0
+      failed_when: false
+
+    - name: Validate PATH, CC, and HOSTCC (summary only)
+      ansible.builtin.shell: |
+        echo "PATH=$PATH"
+        echo "CC=${CC:-not set}"
+        echo "HOSTCC=${HOSTCC:-not set}"
+        command -v gcc || echo "gcc not found in PATH"
+        command -v distcc || echo "distcc not found in PATH"
+      args:
+        executable: /bin/bash
+      register: toolchain_summary
+      changed_when: false
+
+    - name: Show toolchain summary
+      ansible.builtin.debug:
+        var: toolchain_summary.stdout

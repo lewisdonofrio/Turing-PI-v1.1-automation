@@ -1,6 +1,7 @@
-# /opt/ansible-k3s-cluster/cluster-distcc-validate.yml
+# /opt/ansible-k3s-cluster/playbooks/cluster-distcc-validate.yml
 # Purpose: Validate distcc readiness across builder and workers.
-# Behavior: Read-only checks for distccd, symlinks, override, gcc, PATH, MTU, FQDN, and dry-run.
+# Behavior: Read-only checks for distccd, symlinks, override, gcc, PATH, MTU,
+#           FQDN, dry-run, and shim-based pump-mode health.
 # Author: Lewis Donofrio
 # Notes: Safe to run at any time. ASCII-only. Idempotent.
 
@@ -31,6 +32,58 @@
         msg:
           - "Builder distccd active: {{ builder_distccd.stdout }}"
           - "Builder tmpfs mount active: {{ builder_tmpfs.stdout }}"
+
+    # =============================================================================
+    # Pump-Mode Validation (Shim-Based)
+    # =============================================================================
+    # Purpose:
+    #   Validate that include-server is running and pump-mode is active on the
+    #   builder node using the shim-based architecture.
+    #
+    # Behavior:
+    #   - Checks include-server process presence.
+    #   - Locates the active /tmp/distcc-pump.<pid> directory.
+    #   - Validates the pump socket file.
+    #   - Executes pumpctl health for canonical verification.
+    #
+    # Notes:
+    #   - The system pump binary is not used.
+    #   - Environment variables (INCLUDE_SERVER_*) are not authoritative.
+    #   - This section is read-only and safe to run at any time.
+    #   - ASCII-only. No tabs. Deterministic wording.
+    # =============================================================================
+
+    - name: Check include-server process
+      ansible.builtin.shell: pgrep -f include-server >/dev/null 2>&1
+      register: pump_process_check
+      changed_when: false
+      failed_when: pump_process_check.rc != 0
+
+    - name: Locate pump socket directory
+      ansible.builtin.shell: ls -td /tmp/distcc-pump.* 2>/dev/null | head -n1
+      register: pump_socket_dir
+      changed_when: false
+      failed_when: pump_socket_dir.stdout == ""
+
+    - name: Validate pump socket exists
+      ansible.builtin.stat:
+        path: "{{ pump_socket_dir.stdout }}/socket"
+      register: pump_socket_stat
+      failed_when: not pump_socket_stat.stat.exists or not pump_socket_stat.stat.issock
+
+    - name: Run pumpctl health
+      ansible.builtin.shell: /home/builder/scripts/pumpctl health
+      register: pumpctl_health
+      changed_when: false
+      failed_when: pumpctl_health.rc != 0
+
+    - name: Report pump-mode state
+      ansible.builtin.debug:
+        msg:
+          - "include-server running: yes"
+          - "socket directory: {{ pump_socket_dir.stdout }}"
+          - "socket exists: {{ pump_socket_stat.stat.exists }}"
+          - "pumpctl health: OK"
 
 # =============================================================================
 # Worker validation

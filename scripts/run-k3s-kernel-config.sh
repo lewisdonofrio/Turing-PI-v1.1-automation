@@ -13,25 +13,34 @@ TARGET_SCRIPT="${KERNEL_DIR}/${SCRIPT_NAME}"
 
 echo "=== k3s kernel config wrapper ==="
 
-# Ensure kernel directory exists
+# ---------------------------------------------------------------------
+#  Ensure kernel directory exists
+# ---------------------------------------------------------------------
 if [ ! -d "${KERNEL_DIR}" ]; then
     echo "ERROR: Kernel directory ${KERNEL_DIR} does not exist."
     echo "Extract or clone the kernel source before running this wrapper."
     exit 1
 fi
 
-# Ensure authoritative script exists in ~/scripts
+# ---------------------------------------------------------------------
+#  Ensure authoritative script exists in ~/scripts
+# ---------------------------------------------------------------------
 if [ ! -f "${SOURCE_SCRIPT}" ]; then
     echo "ERROR: Authoritative script not found at ${SOURCE_SCRIPT}"
     echo "Place ${SCRIPT_NAME} in ~/scripts/ before running."
     exit 1
 fi
 
-# Always overwrite to avoid drift
+# ---------------------------------------------------------------------
+#  Always overwrite to avoid drift
+# ---------------------------------------------------------------------
 echo "Copying authoritative ${SCRIPT_NAME} into kernel tree..."
 cp "${SOURCE_SCRIPT}" "${TARGET_SCRIPT}"
 chmod +x "${TARGET_SCRIPT}"
 
+# ---------------------------------------------------------------------
+#  Execute authoritative script inside kernel tree
+# ---------------------------------------------------------------------
 echo "Executing ${SCRIPT_NAME} inside kernel tree..."
 cd "${KERNEL_DIR}"
 exec "./${SCRIPT_NAME}"

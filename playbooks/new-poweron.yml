@@ -3,6 +3,7 @@
 # Notes:
 #   - ASCII-only, nano-safe, idempotent.
 #   - Pump-mode startup is builder-local and NOT handled here.
+#   - This playbook enforces cluster-wide invariants only.
 
 ---
 
@@ -31,15 +32,6 @@
   hosts: all
   become: true
   gather_facts: false
-
-  vars:
-    distcc_hosts_global:
-      - "kubenode2/4"
-      - "kubenode3/4"
-      - "kubenode4/4"
-      - "kubenode5/4"
-      - "kubenode6/4"
-      - "kubenode7/4"
 
   tasks:
     - name: Ensure /etc/distcc/hosts is correct

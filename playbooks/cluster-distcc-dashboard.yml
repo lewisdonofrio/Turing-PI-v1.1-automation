@@ -2,7 +2,9 @@
 # Purpose: Show distcc configuration and status across builder and workers.
 # Behavior: Read-only. Safe to run at 2am.
 # Author: Lewis Donofrio
-# Notes: Summarizes systemd unit, override, process state, and version.
+# Notes: Summarizes systemd unit, override, process state, version, and pump-mode.
+
+---
 
 - name: Distcc cluster dashboard
   hosts: builder,workers
@@ -15,6 +17,58 @@
       ansible.builtin.debug:
         msg: "Host {{ inventory_hostname }} (role={{ group_names }})"
 
+    # =============================================================================
+    # Pump-mode (builder only)
+    # =============================================================================
+    - name: pumpctl health (builder only)
+      ansible.builtin.shell: /home/builder/scripts/pumpctl health
+      register: pump_health
+      changed_when: false
+      failed_when: false
+      when: "'builder' in group_names"
+
+    - name: Report pumpctl health (builder only)
+      ansible.builtin.debug:
+        msg: "pumpctl health: {{ pump_health.stdout | default('n/a') }}"
+      when: "'builder' in group_names"
+
+    - name: Check include-server PID (builder only)
+      ansible.builtin.shell: pgrep -f include-server || true
+      register: include_pid
+      changed_when: false
+      when: "'builder' in group_names"
+
+    - name: Report include-server PID (builder only)
+      ansible.builtin.debug:
+        msg: "include-server PID: {{ include_pid.stdout | default('none') }}"
+      when: "'builder' in group_names"
+
+    - name: Locate pump socket directory (builder only)
+      ansible.builtin.shell: ls -td /tmp/distcc-pump.* 2>/dev/null | head -n1
+      register: pump_socket_dir
+      changed_when: false
+      when: "'builder' in group_names"
+
+    - name: Report pump socket directory (builder only)
+      ansible.builtin.debug:
+        msg: "Pump socket directory: {{ pump_socket_dir.stdout | default('none') }}"
+      when: "'builder' in group_names"
+
+    - name: Check pump socket file (builder only)
+      ansible.builtin.stat:
+        path: "{{ pump_socket_dir.stdout }}/socket"
+      register: pump_socket_stat
+      failed_when: false
+      when: "'builder' in group_names"
+
+    - name: Report pump socket state (builder only)
+      ansible.builtin.debug:
+        msg: "Pump socket exists: {{ pump_socket_stat.stat.exists | default(false) }}"
+      when: "'builder' in group_names"
+
+    # =============================================================================
+    # Existing distccd systemd checks (unchanged)
+    # =============================================================================
     - name: Show distccd systemd unit status
       ansible.builtin.shell: |
         systemctl is-enabled distccd || echo "distccd not enabled"

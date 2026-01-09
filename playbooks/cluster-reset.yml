@@ -1,12 +1,15 @@
-# /opt/ansible-k3s-cluster/playbooks/poweroff.yml
-# Purpose: Gracefully shut down the k3s + distcc cluster in a deterministic sequence.
+# /opt/ansible-k3s-cluster/playbooks/cluster-reset.yml
+# Purpose: Reset the entire distcc + pump-mode build cluster to a clean state.
 # Behavior:
-#   - Stop pump-mode include-server on builder
+#   - Stop include-server on builder
 #   - Stop distccd on workers
 #   - Kill lingering cc1 processes
-#   - Produce a clean cluster shutdown summary
+#   - Clear persistent build directories
+#   - Clear builder build logs and build outputs
+#   - Produce a clean cluster reset summary
 # Notes:
 #   - ASCII-only, nano-safe, idempotent.
+#   - Does NOT delete kernel source trees.
 #   - Safe to run repeatedly.
 
 ---
@@ -14,7 +17,7 @@
 # =============================================================================
 # Phase 1: Stop pump-mode include-server on builder
 # =============================================================================
-- name: Stop pump-mode include-server
+- name: Stop include-server on builder
   hosts: builder
   become: false
   gather_facts: false
@@ -82,15 +85,83 @@
         msg: "cc1 on {{ inventory_hostname }}: {{ cc1_state.stdout }}"
 
 # =============================================================================
-# Phase 4: Cluster shutdown summary
+# Phase 4: Clear worker build directories (persistent storage only)
 # =============================================================================
-- name: Cluster shutdown summary
+- name: Clear worker build directories
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    build_dir: /var/tmp/distcc-build
+
+  tasks:
+
+    - name: Remove build directory contents
+      ansible.builtin.file:
+        path: "{{ build_dir }}"
+        state: absent
+
+    - name: Recreate empty build directory
+      ansible.builtin.file:
+        path: "{{ build_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Report build directory reset
+      ansible.builtin.debug:
+        msg: "Build directory reset on {{ inventory_hostname }} at {{ build_dir }}"
+
+# =============================================================================
+# Phase 5: Clear builder build logs and build outputs
+# =============================================================================
+- name: Clear builder build artifacts
+  hosts: builder
+  become: false
+  gather_facts: false
+
+  vars:
+    build_logs: /home/builder/build-logs
+    build_output: /home/builder/build-output
+
+  tasks:
+
+    - name: Clear build logs
+      ansible.builtin.file:
+        path: "{{ build_logs }}"
+        state: absent
+
+    - name: Recreate build logs directory
+      ansible.builtin.file:
+        path: "{{ build_logs }}"
+        state: directory
+        mode: '0755'
+
+    - name: Clear build output directory
+      ansible.builtin.file:
+        path: "{{ build_output }}"
+        state: absent
+
+    - name: Recreate build output directory
+      ansible.builtin.file:
+        path: "{{ build_output }}"
+        state: directory
+        mode: '0755'
+
+    - name: Report builder cleanup
+      ansible.builtin.debug:
+        msg: "Builder logs and output directories reset"
+
+# =============================================================================
+# Phase 6: Cluster reset summary
+# =============================================================================
+- name: Cluster reset summary
   hosts: all
   become: false
   gather_facts: false
 
   tasks:
 
-    - name: Report node shutdown state
+    - name: Report node reset state
       ansible.builtin.debug:
-        msg: "Node {{ inventory_hostname }} is clean and powered down (services stopped)"
+        msg: "Node {{ inventory_hostname }} reset complete"

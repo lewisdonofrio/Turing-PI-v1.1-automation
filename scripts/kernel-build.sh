@@ -1,189 +1,205 @@
-#!/bin/bash
-# /opt/ansible-k3s-cluster/scripts/kernel-build.sh
-# Distributed, pump-mode, out-of-tree kernel build + packaging.
-# Doctrine:
-#   - SRC must remain pristine
-#   - BUILD contains all generated state
-#   - .config lives ONLY in BUILD
-#   - pump used ONLY for compile phase
-#   - packaging uses staged artifacts only
-
+#!/usr/bin/env bash
 set -euo pipefail
 
-LOG="/home/builder/kernel-build.log"
+# =====================================================================
+#  /home/builder/scripts/kernel-build.sh
+#
+#  Purpose:
+#    Deterministic ARMv7 + k3s kernel build using pump-mode distcc.
+#    Requires kernel-build-preflight.sh to have run successfully.
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - Must run as builder on kubenode1.
+#    - Preflight guarantees pump mode, PATH, CC/HOSTCC, and environment.
+# =====================================================================
+
+# ---------------------------------------------------------------------
+#  Load pump-mode environment from preflight
+# ---------------------------------------------------------------------
+
+if [ -f /tmp/kernel-preflight.env ]; then
+    . /tmp/kernel-preflight.env
+else
+    echo "ERROR: Preflight environment missing. Run kernel-build-preflight.sh first."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------
+#  Verify preflight marker
+# ---------------------------------------------------------------------
+
+if [ ! -f /tmp/kernel-preflight.ok ]; then
+    echo "ERROR: Preflight not run. Run kernel-build-preflight.sh first."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------
+#  Single-instance lock
+# ---------------------------------------------------------------------
+
+LOCKFILE="/tmp/kernel-build.lock"
+exec 9>"${LOCKFILE}"
+if ! flock -n 9; then
+    echo "ERROR: kernel-build already running (lockfile held)."
+    exit 1
+fi
+
+# ---------------------------------------------------------------------
+#  Environment validation
+# ---------------------------------------------------------------------
+
+if [ "$(whoami)" != "builder" ]; then
+    echo "ERROR: Must run as builder user"
+    exit 1
+fi
+
+if [ "$(hostname)" != "kubenode1" ]; then
+    echo "ERROR: Must run on kubenode1"
+    exit 1
+fi
+
 SRC="/home/builder/src/kernel"
-BUILD="/home/builder/kernel-build"
-CONFIG="/opt/ansible-k3s-cluster/kernel-configs/cm3plus.config"
+LOGDIR="/home/builder/build-logs"
+CONFIG_WRAPPER="/home/builder/scripts/run-k3s-kernel-config.sh"
+PUMP_MAKE="/home/builder/scripts/pump-make.sh"
 
-PKGNAME="linux-rpi-6.18-k3s"
-STAGE_ROOT="/home/builder/pkgstage"
-STAGE="${STAGE_ROOT}/${PKGNAME}"
-PKGOUT="/home/builder/pkgout"
-
-MAX_JOBS=12
-DEFAULT_JOBS=12
-
-echo "=== kernel-build.sh ===" | tee "$LOG"
-echo "Start: $(date -u)" | tee -a "$LOG"
-
-# ------------------------------------------------------------
-# Parse job count
-# ------------------------------------------------------------
-if [[ $# -lt 1 ]]; then
-    JOBS="$DEFAULT_JOBS"
-    echo "No -jN provided. Defaulting to -j$JOBS" | tee -a "$LOG"
-else
-    JOBS_RAW="$1"
-    if [[ "$JOBS_RAW" =~ ^-j([0-9]+)$ ]]; then
-        JOBS="${BASH_REMATCH[1]}"
-    else
-        echo "ERROR: Expected -jN argument (for example: -j8)." | tee -a "$LOG"
-        exit 1
-    fi
-fi
-
-if [[ "$JOBS" -gt "$MAX_JOBS" ]]; then
-    echo "ERROR: Concurrency j$JOBS exceeds safe limit j$MAX_JOBS." | tee -a "$LOG"
+if [ ! -d "${SRC}" ]; then
+    echo "ERROR: Kernel source directory not found: ${SRC}"
     exit 1
 fi
 
-echo "Concurrency accepted: -j$JOBS" | tee -a "$LOG"
-
-# ------------------------------------------------------------
-# Verify SRC and BUILD
-# ------------------------------------------------------------
-if [[ ! -d "$SRC" ]]; then
-    echo "ERROR: Kernel source tree missing at $SRC" | tee -a "$LOG"
+if [ ! -x "${CONFIG_WRAPPER}" ]; then
+    echo "ERROR: Config wrapper not executable: ${CONFIG_WRAPPER}"
     exit 1
 fi
 
-if [[ ! -d "$BUILD" ]]; then
-    echo "ERROR: Build directory missing at $BUILD. Run kernel-prep.sh first." | tee -a "$LOG"
+if [ ! -x "${PUMP_MAKE}" ]; then
+    echo "ERROR: pump-make wrapper not executable: ${PUMP_MAKE}"
     exit 1
 fi
 
-if [[ ! -f "$BUILD/.config" ]]; then
-    echo "ERROR: $BUILD/.config missing. Run kernel-prep.sh first." | tee -a "$LOG"
+mkdir -p "${LOGDIR}"
+cd "${SRC}"
+
+# ---------------------------------------------------------------------
+#  Job count parsing (default j12, max j12)
+# ---------------------------------------------------------------------
+
+RAW_JOBS="${1:-12}"
+JOBS="${RAW_JOBS#j}"
+
+if ! [[ "${JOBS}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: Invalid job count: ${RAW_JOBS}"
     exit 1
 fi
 
-# Doctrine enforcement: SRC must not be polluted
-if find "$SRC" -maxdepth 1 -name ".config" | grep -q .; then
-    echo "ERROR: .config present in SRC. This violates out-of-tree doctrine." | tee -a "$LOG"
+if [ "${JOBS}" -gt 12 ]; then
+    echo "ERROR: Maximum allowed job count is 12"
     exit 1
 fi
 
-if find "$SRC/include/generated" -type f 2>/dev/null | grep -q .; then
-    echo "ERROR: include/generated files present in SRC. This violates out-of-tree doctrine." | tee -a "$LOG"
-    exit 1
-fi
+echo "Compiler settings:"
+echo "  CC=${CC:-unset}"
+echo "  HOSTCC=${HOSTCC:-unset}"
+echo "  Jobs=${JOBS}"
 
-echo "Source and build trees verified for out-of-tree build." | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  Pump-mode verification (doctrine-aligned)
+# ---------------------------------------------------------------------
 
-# ------------------------------------------------------------
-# Distcc / pump environment (hostfile-driven)
-# ------------------------------------------------------------
-HOSTFILE="/home/builder/.distcc/hosts"
+echo "Pump-mode is wrapper-managed; include-server will start on demand."
 
-if [[ ! -f "$HOSTFILE" ]]; then
-    echo "ERROR: Distcc hostfile missing at $HOSTFILE" | tee -a "$LOG"
-    exit 1
-fi
+# ---------------------------------------------------------------------
+#  Logging setup
+# ---------------------------------------------------------------------
 
-export DISTCC_HOSTS="$(< "$HOSTFILE")"
+STAMP=$(date +"%Y%m%d-%H%M%S")
+LOGFILE="${LOGDIR}/build-${STAMP}.log"
+LATEST="${LOGDIR}/latest.log"
 
-echo "DISTCC_HOSTS (from hostfile):" | tee -a "$LOG"
-echo "$DISTCC_HOSTS" | tee -a "$LOG"
+echo "Starting kernel build"
+echo "Logging to ${LOGFILE}"
 
-if ! command -v pump >/dev/null 2>&1; then
-    echo "ERROR: pump not found in PATH. Ensure distcc-pump is installed." | tee -a "$LOG"
-    exit 1
-fi
+START=$(date +%s)
 
-# ------------------------------------------------------------
-# Build kernel with pump (compile phase)
-# ------------------------------------------------------------
-echo "Starting distributed kernel build (pump mode)..." | tee -a "$LOG"
-pump make -C "$SRC" O="$BUILD" -j"$JOBS" 2>&1 | tee -a "$LOG"
-echo "Kernel build (vmlinux + modules) complete." | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  CRITICAL:
+#    CC/HOSTCC must be exported BEFORE prepare stage
+#    Preflight already set CC="pump gcc"
+# ---------------------------------------------------------------------
 
-# ------------------------------------------------------------
-# Final image stage (non-pump): zImage + DTBs
-# ------------------------------------------------------------
-echo "Building zImage and DTBs (non-pump stage)..." | tee -a "$LOG"
-make -C "$SRC" O="$BUILD" ARCH=arm CROSS_COMPILE=armv7l-unknown-linux-gnueabihf- zImage dtbs 2>&1 | tee -a "$LOG"
-echo "zImage and DTBs build complete." | tee -a "$LOG"
+export CC="${CC}"
+export HOSTCC="${HOSTCC}"
 
-# ------------------------------------------------------------
-# Determine kernel release
-# ------------------------------------------------------------
-echo "Determining kernel release..." | tee -a "$LOG"
-KREL="$(make -s -C "$SRC" O="$BUILD" kernelrelease)"
-echo "Kernel release: $KREL" | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  Stage 1: Config wrapper
+# ---------------------------------------------------------------------
 
-# ------------------------------------------------------------
-# Install modules locally (needed for packaging)
-# ------------------------------------------------------------
-echo "Installing modules for $KREL..." | tee -a "$LOG"
-sudo make -C "$SRC" O="$BUILD" modules_install 2>&1 | tee -a "$LOG"
-echo "Modules installed to /lib/modules/$KREL" | tee -a "$LOG"
+echo "[1/3] Running kernel config wrapper..."
+"${CONFIG_WRAPPER}"
 
-# ------------------------------------------------------------
-# Stage artifacts for packaging
-# ------------------------------------------------------------
-echo "Staging kernel artifacts for packaging..." | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  Stage 2: Local prepare stage (real gcc only)
+# ---------------------------------------------------------------------
 
-rm -rf "$STAGE"
-mkdir -p "$STAGE"/{dtbs,overlays,modules/lib/modules}
+echo "[2/3] Running prepare stage (local only)..."
 
-# Kernel image -> kernel7.img
-ZIMAGE_SRC="$BUILD/arch/arm/boot/zImage"
-if [[ ! -f "$ZIMAGE_SRC" ]]; then
-    echo "ERROR: zImage not found at $ZIMAGE_SRC" | tee -a "$LOG"
-    exit 1
-fi
-cp "$ZIMAGE_SRC" "$STAGE/kernel7.img"
+REAL_CC="${CC:-}"
+REAL_HOSTCC="${HOSTCC:-}"
+REAL_PATH="${PATH:-}"
 
-# DTBs (bcm*.dtb)
-DTB_SRC_DIR="$BUILD/arch/arm/boot/dts"
-if [[ -d "$DTB_SRC_DIR" ]]; then
-    cp "$DTB_SRC_DIR"/bcm*.dtb "$STAGE/dtbs/" 2>/dev/null || true
-else
-    echo "WARNING: DTB source directory $DTB_SRC_DIR not found." | tee -a "$LOG"
-fi
+export CC="gcc"
+export HOSTCC="gcc"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
 
-# Overlays
-OVERLAY_SRC_DIR="$BUILD/arch/arm/boot/dts/overlays"
-if [[ -d "$OVERLAY_SRC_DIR" ]]; then
-    cp "$OVERLAY_SRC_DIR"/*.dtbo "$STAGE/overlays/" 2>/dev/null || true
-else
-    echo "WARNING: overlay source directory $OVERLAY_SRC_DIR not found." | tee -a "$LOG"
-fi
+make ARCH=arm prepare
 
-# Modules -> modules/lib/modules/$KREL
-if [[ -d "/lib/modules/$KREL" ]]; then
-    cp -a "/lib/modules/$KREL" "$STAGE/modules/lib/modules/"
-else
-    echo "ERROR: /lib/modules/$KREL not found after modules_install." | tee -a "$LOG"
-    exit 1
-fi
+export CC="${REAL_CC}"
+export HOSTCC="${REAL_HOSTCC}"
+export PATH="${REAL_PATH}"
 
-echo "Artifacts staged under $STAGE" | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  Stage 3: Pre-syncconfig (real gcc only)
+# ---------------------------------------------------------------------
 
-# ------------------------------------------------------------
-# Build package via PKGBUILD
-# ------------------------------------------------------------
-echo "Building package $PKGNAME..." | tee -a "$LOG"
-cd /opt/ansible-k3s-cluster/pkgbuilds/linux-rpi-6.18-k3s
+echo "[3/3] Pre-syncconfig (local, real gcc)..."
 
-rm -f "${PKGNAME}"-*.pkg.tar.zst
+REAL_CC="${CC:-}"
+REAL_HOSTCC="${HOSTCC:-}"
+REAL_PATH="${PATH:-}"
 
-makepkg -f --clean --cleanbuild --nodeps --nocheck --noconfirm 2>&1 | tee -a "$LOG"
+export CC="gcc"
+export HOSTCC="gcc"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
 
-mkdir -p "$PKGOUT"
-mv "${PKGNAME}"-*.pkg.tar.zst "$PKGOUT/"
+make ARCH=arm syncconfig
 
-echo "Package(s) created in $PKGOUT:" | tee -a "$LOG"
-ls -1 "$PKGOUT"/"${PKGNAME}"-*.pkg.tar.zst | tee -a "$LOG"
+export CC="${REAL_CC}"
+export HOSTCC="${REAL_HOSTCC}"
+export PATH="${REAL_PATH}"
 
-echo "End: $(date -u)" | tee -a "$LOG"
+# ---------------------------------------------------------------------
+#  Stage 3: Distributed build via pump-make
+# ---------------------------------------------------------------------
+
+echo "[3/3] Running distributed build via pump-make..."
+
+"${PUMP_MAKE}" \
+    -j"${JOBS}" \
+    ARCH=arm \
+    Image modules dtbs \
+    2>&1 | tee "${LOGFILE}"
+
+# ---------------------------------------------------------------------
+#  Timing and summary
+# ---------------------------------------------------------------------
+
+END=$(date +%s)
+ELAPSED=$((END - START))
+
+ln -sf "${LOGFILE}" "${LATEST}"
+
+echo "Build completed"
+echo "Elapsed time: ${ELAPSED} seconds"
+exit 0

@@ -1,0 +1,19 @@
+#!/bin/sh
+# pump-shim
+# Thin wrapper to run distcc in pump mode with include_server
+# Usage: pump-shim gcc -c foo.c -o foo.o
+
+set -eu
+
+# Cluster-specific environment; adjust for your doctrine
+: "${PUMP_HOSTS:=${DISTCC_HOSTS:-localhost}}"
+: "${PUMP_TMPDIR:=/tmp/pump-${USER}}"
+
+export DISTCC_HOSTS="${PUMP_HOSTS}"
+export TMPDIR="${PUMP_TMPDIR}"
+
+# Optional: debug
+# echo "PUMP_HOSTS=${PUMP_HOSTS}" 1>&2
+
+# Exec pump wrapper from distcc install; assumes in PATH
+exec pump "$@"

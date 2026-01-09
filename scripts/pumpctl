@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# =============================================================================
+# File: /home/builder/scripts/pumpctl
+# =============================================================================
+# Purpose:
+#   Unified control interface for shim-based distcc-pump include-server.
+#
+# Usage:
+#   pumpctl start
+#   pumpctl stop
+#   pumpctl restart
+#   pumpctl health
+#   pumpctl status
+#
+# Notes:
+#   This script wraps pump-shim, pump-restart.sh, and pump-health.sh into a
+#   single canonical interface. No tabs, ASCII-only.
+# =============================================================================
+
+set -eu
+
+PUMP_SHIM="/usr/local/lib/distcc-pump/pump-shim"
+PUMP_RESTART="/home/builder/scripts/pump-restart.sh"
+PUMP_HEALTH="/home/builder/scripts/pump-health.sh"
+
+cmd="${1:-}"
+
+case "${cmd}" in
+    start)
+        echo "pumpctl: starting pump..."
+        "${PUMP_SHIM}" --version >/dev/null 2>&1 || true
+        sleep 1
+        "${PUMP_HEALTH}"
+        ;;
+
+    stop)
+        echo "pumpctl: stopping pump..."
+        pkill -f include-server || true
+        sleep 1
+        echo "pumpctl: stopped."
+        ;;
+
+    restart)
+        "${PUMP_RESTART}"
+        ;;
+
+    health)
+        "${PUMP_HEALTH}"
+        ;;
+
+    status)
+        if "${PUMP_HEALTH}" >/dev/null 2>&1; then
+            echo "pumpctl: pump is active."
+        else
+            echo "pumpctl: pump is inactive."
+        fi
+        ;;
+
+    *)
+        echo "pumpctl: unknown command: ${cmd}" >&2
+        echo "usage: pumpctl {start|stop|restart|health|status}" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
