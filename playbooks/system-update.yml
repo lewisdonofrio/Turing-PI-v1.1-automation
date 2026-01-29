@@ -1,0 +1,43 @@
+---
+- name: Cluster-wide system update
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    reboot_triggers:
+      - linux
+      - glibc
+      - systemd
+      - mkinitcpio
+
+  tasks:
+
+    - name: Sync pacman databases
+      command: pacman -Syy --noconfirm
+
+    - name: Perform full system upgrade
+      command: pacman -Syu --noconfirm
+      register: upgrade_result
+      changed_when: "'upgraded' in upgrade_result.stdout or 'installed' in upgrade_result.stdout"
+
+    - name: Mark node as updated or unchanged
+      set_fact:
+        update_status: >-
+          {{ 'UPDATED' if (upgrade_result.stdout is search('upgraded|installed')) else 'NO-CHANGE' }}
+
+    - name: Decide if reboot is required
+      set_fact:
+        reboot_required: >-
+          {{ reboot_triggers | select('in', upgrade_result.stdout) | list | length > 0 }}
+
+    - name: Reboot if kernel or core packages changed
+      reboot:
+      when: reboot_required
+
+    - name: Record summary for this node
+      add_host:
+        name: "{{ inventory_hostname }}"
+        groups: update_summary
+        update_status: "{{ update_status }}"
+        reboot_required: "{{ reboot_required }}"

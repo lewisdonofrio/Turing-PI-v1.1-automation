@@ -1,0 +1,38 @@
+# =====================================================================
+#  /opt/ansible-k3s-cluster/playbooks/kernel-playlist.yml
+#
+#  Purpose:
+#    Full end-to-end kernel lifecycle:
+#      1. Preflight
+#      2. Build
+#      3. Post-build validation
+#      4. Distribute artifacts to cluster
+#      5. Install kernel on worker7 (test node)
+#      6. Reboot worker7
+#      7. Health check on worker7
+#      8. Verify installation on worker7
+#      9. Cluster-wide rollout (install + reboot + verify)
+#
+#  Notes:
+#    - ASCII-only, nano-safe, deterministic.
+#    - Requires kernelrelease and kernel_timestamp variables.
+# =====================================================================
+
+- import_playbook: kernel-preflight.yml
+- import_playbook: kernel-build.yml
+- import_playbook: kernel-postbuild-validator.yml
+
+# Distribute artifacts to all nodes BEFORE installation
+- import_playbook: kernel-distribute.yml
+
+# Worker7 test cycle
+- import_playbook: kernel-install-worker7.yml
+- import_playbook: kernel-reboot-worker7.yml
+- import_playbook: kernel-health-worker7.yml
+- import_playbook: kernel-verify-worker7.yml
+
+# Cluster-wide rollout AFTER worker7 validation
+- import_playbook: kernel-install.yml
+- import_playbook: kernel-reboot.yml
+- import_playbook: kernel-health.yml
+- import_playbook: kernel-verify.yml

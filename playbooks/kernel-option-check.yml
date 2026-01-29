@@ -1,0 +1,53 @@
+---
+- name: Check k3s-required kernel options
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    required_kernel_options:
+      - CONFIG_NF_NAT
+      - CONFIG_IP_NF_TARGET_MASQUERADE
+      - CONFIG_NETFILTER_XT_MATCH_COMMENT
+      - CONFIG_BRIDGE_NETFILTER
+
+  tasks:
+
+    - name: Read running kernel config
+      shell: "zgrep -E '{{ required_kernel_options | join(\"|\") }}' /proc/config.gz || true"
+      register: kernel_config
+
+    - name: Parse kernel option results
+      set_fact:
+        kernel_option_status: >-
+          {{
+            dict(required_kernel_options |
+            zip(required_kernel_options |
+            map('regex_search', kernel_config.stdout) |
+            map('bool')))
+          }}
+
+    - name: Report per-node kernel option status
+      debug:
+        msg: |
+          Node {{ inventory_hostname }} kernel option check:
+          {% for opt, present in kernel_option_status.items() %}
+            - {{ opt }}: {{ 'ENABLED' if present else 'MISSING' }}
+          {% endfor %}
+
+    - name: Add to summary group
+      add_host:
+        name: "{{ inventory_hostname }}"
+        groups: kernel_summary
+        kernel_option_status: "{{ kernel_option_status }}"
+
+- name: Kernel option summary
+  hosts: kernel_summary
+  gather_facts: false
+  tasks:
+    - debug:
+        msg: |
+          SUMMARY for {{ inventory_hostname }}:
+          {% for opt, present in hostvars[inventory_hostname].kernel_option_status.items() %}
+            - {{ opt }}: {{ 'ENABLED' if present else 'MISSING' }}
+          {% endfor %}

@@ -1,0 +1,85 @@
+---
+- name: Bootstrap CM3+ worker after jumpstart
+  hosts: kernel_production
+  become: true
+  gather_facts: false
+
+  vars:
+    ansible_uid: 1001
+    ansible_gid: 1001
+    builder_uid: 1002
+    builder_gid: 1002
+
+  tasks:
+
+    - name: Enforce ansible UID/GID
+      user:
+        name: ansible
+        uid: "{{ ansible_uid }}"
+        group: ansible
+        state: present
+
+    - name: Enforce builder UID/GID
+      user:
+        name: builder
+        uid: "{{ builder_uid }}"
+        group: builder
+        state: present
+
+    - name: Fix home directory ownership
+      file:
+        path: "{{ item }}"
+        owner: "{{ item | basename }}"
+        group: "{{ item | basename }}"
+        recurse: yes
+      loop:
+        - /home/ansible
+        - /home/builder
+
+    - name: Install distcc
+      pacman:
+        name: distcc
+        state: present
+        update_cache: yes
+
+    - name: Deploy distccd config
+      copy:
+        src: files/distccd.conf
+        dest: /etc/conf.d/distccd
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Deploy distcc hosts
+      copy:
+        src: files/distcc-hosts
+        dest: /etc/distcc/hosts
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start distccd
+      systemd:
+        name: distccd
+        enabled: yes
+        state: started
+
+    - name: Remove tmpfs mount unit (CM3+ safe)
+      file:
+        path: /etc/systemd/system/tmp-kernelbuild.mount
+        state: absent
+
+    - name: Ensure /tmp/kernelbuild is absent
+      file:
+        path: /tmp/kernelbuild
+        state: absent
+
+    - name: Healthcheck summary
+      shell: |
+        echo "uptime: $(uptime)"
+        echo "distccd: $(systemctl is-active distccd)"
+        echo "python: $(python3 --version 2>/dev/null || echo 'missing')"
+      register: hc
+
+    - debug:
+        msg: "Node {{ inventory_hostname }} bootstrap summary:\n{{ hc.stdout }}"
