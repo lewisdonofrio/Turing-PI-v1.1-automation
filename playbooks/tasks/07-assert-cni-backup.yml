@@ -1,0 +1,131 @@
+---
+# 07-assert-cni.yml
+# Assert CNI + flannel + kube-proxy + node readiness
+# Uses the same checksum + runtime logic as the health-check
+
+# ------------------------------------------------------------
+# 1. Get master CNI checksum
+# ------------------------------------------------------------
+- name: Get master CNI checksum
+  delegate_to: "{{ groups['master'][0] }}"
+  run_once: true
+  shell: "sha256sum /var/lib/rancher/k3s/data/current/bin/cni | awk '{print $1}'"
+  register: master_cni_checksum
+
+# ------------------------------------------------------------
+# 2. Get worker CNI checksum
+# ------------------------------------------------------------
+- name: Get worker CNI checksum
+  shell: "sha256sum /var/lib/rancher/k3s/data/current/bin/cni 2>/dev/null | awk '{print $1}' || echo 'missing'"
+  register: worker_cni_checksum
+
+# ------------------------------------------------------------
+# 3. Assert checksum match
+# ------------------------------------------------------------
+- name: Fail if worker CNI checksum does not match master
+  fail:
+    msg: >
+      Embedded CNI checksum mismatch on {{ inventory_hostname }}.
+      Expected {{ master_cni_checksum.stdout }},
+      got {{ worker_cni_checksum.stdout }}.
+  when: worker_cni_checksum.stdout != master_cni_checksum.stdout
+
+# ------------------------------------------------------------
+# 4. Assert loopback plugin exists
+# ------------------------------------------------------------
+- name: Assert loopback plugin exists
+  stat:
+    path: /opt/cni/bin/loopback
+  register: loopback_stat
+
+- name: Fail if loopback plugin missing
+  fail:
+    msg: "loopback plugin missing on {{ inventory_hostname }}"
+  when: not loopback_stat.stat.exists
+
+# ------------------------------------------------------------
+# 5. Assert loopback plugin executable
+# ------------------------------------------------------------
+- name: Assert loopback plugin executable
+  shell: "[ -x /opt/cni/bin/loopback ] && echo ok || echo bad"
+  register: loopback_exec
+
+- name: Fail if loopback plugin not executable
+  fail:
+    msg: "loopback plugin not executable on {{ inventory_hostname }}"
+  when: loopback_exec.stdout != "ok"
+
+# ------------------------------------------------------------
+# 6. Assert loopback plugin architecture
+# ------------------------------------------------------------
+- name: Check loopback plugin architecture
+  shell: "file /opt/cni/bin/loopback"
+  register: loopback_arch
+
+- name: Fail if loopback plugin architecture invalid
+  fail:
+    msg: >
+      loopback plugin architecture invalid on {{ inventory_hostname }}:
+      {{ loopback_arch.stdout }}
+  when: "'ELF' not in loopback_arch.stdout"
+
+# ------------------------------------------------------------
+# 7. Assert containerd can load CNI plugins
+# ------------------------------------------------------------
+- name: Test CNI plugin load via containerd
+  shell: >
+    ctr --namespace k8s.io plugins ls 2>/dev/null |
+    grep -E 'cni|loopback' || echo 'not-loaded'
+  register: cni_runtime
+
+- name: Fail if containerd cannot load CNI plugins
+  fail:
+    msg: >
+      containerd cannot load CNI plugins on {{ inventory_hostname }}:
+      {{ cni_runtime.stdout }}
+  when: "'not-loaded' in cni_runtime.stdout"
+
+# ------------------------------------------------------------
+# 8. Assert flannel interface exists
+# ------------------------------------------------------------
+- name: Check flannel interface
+  shell: "ip link show flannel.1 2>/dev/null || echo 'missing'"
+  register: flannel_iface
+
+- name: Fail if flannel interface missing
+  fail:
+    msg: "flannel.1 interface missing on {{ inventory_hostname }}"
+  when: "'missing' in flannel_iface.stdout"
+
+# ------------------------------------------------------------
+# 9. Assert kube-proxy is running
+# ------------------------------------------------------------
+- name: Check kube-proxy pod
+  shell: >
+    kubectl get pods -A -o wide |
+    grep kube-proxy |
+    grep {{ inventory_hostname }} ||
+    echo 'missing'
+  register: kube_proxy_check
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: Fail if kube-proxy not running on this node
+  fail:
+    msg: "kube-proxy not running on {{ inventory_hostname }}"
+  when: "'missing' in kube_proxy_check.stdout"
+
+# ------------------------------------------------------------
+# 10. Assert node Ready state
+# ------------------------------------------------------------
+- name: Check node Ready state
+  shell: >
+    kubectl get node {{ inventory_hostname }}
+    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' ||
+    echo 'missing'
+  register: node_ready
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: Fail if node not Ready
+  fail:
+    msg: "Node {{ inventory_hostname }} is not Ready ({{ node_ready.stdout }})"
+  when: node_ready.stdout != "True"

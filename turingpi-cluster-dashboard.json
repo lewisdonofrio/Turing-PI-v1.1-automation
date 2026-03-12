@@ -1,0 +1,530 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Cluster Overview",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Node Ready",
+      "id": 2,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "max(kube_node_status_condition{condition=\"Ready\",status=\"true\",node=~\"$node\"})",
+          "legendFormat": "Ready",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            { "color": "red", "value": 0 },
+            { "color": "green", "value": 1 }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 }
+    },
+    {
+      "type": "stat",
+      "title": "Node CPU Usage (%)",
+      "id": 3,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node:9100\"}[2m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 }
+    },
+    {
+      "type": "stat",
+      "title": "Node Memory Usage (%)",
+      "id": 4,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"$node:9100\"} / node_memory_MemTotal_bytes{instance=~\"$node:9100\"})) * 100",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 }
+    },
+    {
+      "type": "stat",
+      "title": "Pod Count (All Namespaces)",
+      "id": 5,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "count(kube_pod_info)",
+          "legendFormat": "pods",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 }
+    },
+    {
+      "type": "stat",
+      "title": "Container Restarts (5m rate)",
+      "id": 6,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_pod_container_status_restarts_total[5m]))",
+          "legendFormat": "restarts/s",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 }
+    },
+    {
+      "type": "stat",
+      "title": "Prometheus Scrape Failures (5m)",
+      "id": 7,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(prometheus_target_scrapes_exceeded_sample_limit_total[5m]))",
+          "legendFormat": "scrape failures",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 }
+    },
+
+    {
+      "type": "row",
+      "title": "Node Health",
+      "id": 10,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "panels": []
+    },
+    {
+      "type": "graph",
+      "title": "CPU Usage Over Time (%)",
+      "id": 11,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",instance=~\"$node:9100\"}[2m])) * 100)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 }
+    },
+    {
+      "type": "graph",
+      "title": "Memory Usage Over Time (%)",
+      "id": 12,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes{instance=~\"$node:9100\"} / node_memory_MemTotal_bytes{instance=~\"$node:9100\"})) * 100",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 }
+    },
+    {
+      "type": "graph",
+      "title": "Load Average (1m, 5m, 15m)",
+      "id": 13,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "node_load1{instance=~\"$node:9100\"}",
+          "legendFormat": "load1",
+          "refId": "A"
+        },
+        {
+          "expr": "node_load5{instance=~\"$node:9100\"}",
+          "legendFormat": "load5",
+          "refId": "B"
+        },
+        {
+          "expr": "node_load15{instance=~\"$node:9100\"}",
+          "legendFormat": "load15",
+          "refId": "C"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 13 }
+    },
+    {
+      "type": "graph",
+      "title": "Node Uptime",
+      "id": 14,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "time() - node_boot_time_seconds{instance=~\"$node:9100\"}",
+          "legendFormat": "uptime",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 13 }
+    },
+
+    {
+      "type": "row",
+      "title": "eMMC Storage (mmcblk0)",
+      "id": 20,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "panels": []
+    },
+    {
+      "type": "graph",
+      "title": "Root Filesystem Usage (%) (/dev/mmcblk0p2)",
+      "id": 21,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "(1 - (node_filesystem_avail_bytes{device=\"/dev/mmcblk0p2\",fstype!=\"rootfs\",instance=~\"$node:9100\"} / node_filesystem_size_bytes{device=\"/dev/mmcblk0p2\",fstype!=\"rootfs\",instance=~\"$node:9100\"})) * 100",
+          "legendFormat": "rootfs",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 21 }
+    },
+    {
+      "type": "graph",
+      "title": "Disk I/O Ops (mmcblk0)",
+      "id": 22,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(node_disk_reads_completed_total{device=\"mmcblk0\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "reads",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_disk_writes_completed_total{device=\"mmcblk0\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "writes",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 21 }
+    },
+    {
+      "type": "graph",
+      "title": "Disk Throughput (Bytes/s, mmcblk0)",
+      "id": 23,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(node_disk_read_bytes_total{device=\"mmcblk0\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "read bytes",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_disk_written_bytes_total{device=\"mmcblk0\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "written bytes",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 28 }
+    },
+
+    {
+      "type": "row",
+      "title": "Networking & Flannel",
+      "id": 30,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "panels": []
+    },
+    {
+      "type": "graph",
+      "title": "Network Throughput (Bytes/s)",
+      "id": 31,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "rx {{device}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "tx {{device}}",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 36 }
+    },
+    {
+      "type": "graph",
+      "title": "Network Errors/Drops",
+      "id": 32,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_errs_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "rx_err {{device}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(node_network_transmit_errs_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "tx_err {{device}}",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(node_network_receive_drop_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "rx_drop {{device}}",
+          "refId": "C"
+        },
+        {
+          "expr": "rate(node_network_transmit_drop_total{device!~\"lo\",instance=~\"$node:9100\"}[5m])",
+          "legendFormat": "tx_drop {{device}}",
+          "refId": "D"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 36 }
+    },
+    {
+      "type": "graph",
+      "title": "Flannel VXLAN Packets",
+      "id": 33,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(flannel_subnet_leases[5m])",
+          "legendFormat": "leases",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 43 }
+    },
+
+    {
+      "type": "row",
+      "title": "Control Plane (k3s server node)",
+      "id": 40,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 },
+      "panels": []
+    },
+    {
+      "type": "graph",
+      "title": "API Server Request Rate",
+      "id": 41,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(apiserver_request_total[5m])) by (verb)",
+          "legendFormat": "{{verb}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 51 }
+    },
+    {
+      "type": "graph",
+      "title": "API Server Request Latency (99th percentile)",
+      "id": 42,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 51 }
+    },
+    {
+      "type": "graph",
+      "title": "Scheduler Scheduling Attempts",
+      "id": 43,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_schedule_attempts_total[5m])) by (result)",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 58 }
+    },
+    {
+      "type": "graph",
+      "title": "Controller Manager Workqueue Depth",
+      "id": 44,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(workqueue_depth)",
+          "legendFormat": "depth",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 58 }
+    },
+
+    {
+      "type": "row",
+      "title": "Pod Lifecycle & Cluster State",
+      "id": 50,
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 65 },
+      "panels": []
+    },
+    {
+      "type": "graph",
+      "title": "Pod Count Per Namespace",
+      "id": 51,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "count(kube_pod_info) by (namespace)",
+          "legendFormat": "{{namespace}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 66 }
+    },
+    {
+      "type": "graph",
+      "title": "Pod Churn (Creates/Deletes)",
+      "id": 52,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_pod_created[5m]))",
+          "legendFormat": "creates",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(kube_pod_deleted[5m]))",
+          "legendFormat": "deletes",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 66 }
+    },
+    {
+      "type": "graph",
+      "title": "Container Restarts by Pod",
+      "id": 53,
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(kube_pod_container_status_restarts_total[5m])) by (pod)",
+          "legendFormat": "{{pod}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 73 }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["turingpi", "armv7", "cluster"],
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "type": "query",
+        "label": "Node",
+        "datasource": "Prometheus",
+        "query": "label_values(node_boot_time_seconds, instance)",
+        "includeAll": false,
+        "multi": false,
+        "refresh": 1,
+        "sort": 1,
+        "current": {
+          "text": "kubenode2:9100",
+          "value": "kubenode2"
+        },
+        "regex": "/^(.*):9100$/",
+        "hide": 0
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "title": "TuringPI Cluster Dashboard",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,76 @@
+---
+# 01-remove-old-agent.yml
+# Cleanly reset a worker node before onboarding.
+# Derived from k3s-offboard.yml but scoped and hardened for workers.
+
+# ------------------------------------------------------------
+# 1. Stop k3s services cleanly
+# ------------------------------------------------------------
+- name: Stop k3s services if running
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - k3s
+    - k3s-agent
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 2. Run uninstall scripts if present
+# ------------------------------------------------------------
+- name: Run uninstall script if present
+  shell: |
+    if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
+      /usr/local/bin/k3s-uninstall.sh
+    elif [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then
+      /usr/local/bin/k3s-agent-uninstall.sh
+    fi
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 3. Clean up kubelet mounts (best-effort)
+# ------------------------------------------------------------
+- name: Clean up kubelet mounts
+  shell: |
+    if mount | grep -q '/var/lib/kubelet'; then
+      mount | grep '/var/lib/kubelet' | awk '{print $3}' | sort -r | xargs -r -n1 umount -l
+    fi
+  args:
+    warn: false
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 4. Remove leftover k3s, kubelet, CNI, and containerd state
+# ------------------------------------------------------------
+- name: Remove leftover Kubernetes directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/rancher/node
+    - /etc/rancher/k3s
+    - /var/lib/rancher/k3s/agent
+    - /var/lib/kubelet
+    - /var/lib/kube-proxy
+    - /var/lib/cni
+    - /var/lib/containerd/io.containerd.runtime.v2.task/k8s.io
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 5. Remove systemd units
+# ------------------------------------------------------------
+- name: Remove k3s systemd units
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/k3s.service
+    - /etc/systemd/system/k3s-agent.service
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 6. Reload systemd to forget removed units
+# ------------------------------------------------------------
+- name: Reload systemd units
+  command: systemctl daemon-reload
+  ignore_errors: true

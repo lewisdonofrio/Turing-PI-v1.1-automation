@@ -1,0 +1,44 @@
+---
+# 02-install-k3s-binary.yml
+# Install canonical ARMv7 k3s binary (kubenode7 baseline)
+
+- name: Ensure k3s binary directory exists
+  file:
+    path: "{{ k3s_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Remove stale k3s binaries
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ k3s_bin_dir }}/k3s"
+    - "{{ k3s_bin_dir }}/k3s-agent"
+
+- name: Download ARMv7 k3s binary
+  get_url:
+    url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s-armhf"
+    dest: "{{ k3s_bin_dir }}/k3s"
+    mode: "0755"
+    force: true
+
+- name: Verify k3s binary is ARMHF
+  shell: "file {{ k3s_bin_dir }}/k3s"
+  register: k3s_filetype
+
+- name: Assert binary architecture is ARMHF
+  assert:
+    that:
+      - "'ARM' in k3s_filetype.stdout"
+      - "'32-bit' in k3s_filetype.stdout"
+    fail_msg: "Downloaded k3s binary is not ARMv7/ARMHF"
+
+- name: Ensure k3s binary permissions
+  file:
+    path: "{{ k3s_bin_dir }}/k3s"
+    owner: root
+    group: root
+    mode: "0755"

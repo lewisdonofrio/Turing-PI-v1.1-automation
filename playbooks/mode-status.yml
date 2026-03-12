@@ -1,8 +1,12 @@
 # /opt/ansible-k3s-cluster/playbooks/mode-status.yml
 # Purpose: Report current cluster mode and service states.
-# Behavior: Checks k3s, distccd, and tmpfs mount status.
-# Author: Lewis Donofrio
+# Behavior: Checks k3s-server, k3s-agent, and distccd on all nodes.
+# Doctrine: tmpfs is no longer used anywhere in the system.
 # Notes: Safe to run at 2am. Idempotent. ASCII-only.
+
+# ---------------------------------------------------------------
+# 1. Check builder status
+# ---------------------------------------------------------------
 
 - name: Check builder status
   hosts: builder
@@ -13,23 +17,23 @@
       ansible.builtin.command: systemctl is-active k3s
       register: builder_k3s
       failed_when: false
+      changed_when: false
 
     - name: Check distccd state
       ansible.builtin.command: systemctl is-active distccd
       register: builder_distccd
       failed_when: false
-
-    - name: Check tmpfs mount state
-      ansible.builtin.command: systemctl is-active 'tmp-kernel\x2dbuild.mount'
-      register: builder_tmpfs
-      failed_when: false
+      changed_when: false
 
     - name: Report builder status
       ansible.builtin.debug:
         msg:
           - "Builder k3s-server: {{ builder_k3s.stdout | default('unknown') }}"
           - "Builder distccd: {{ builder_distccd.stdout | default('unknown') }}"
-          - "Builder tmpfs mount: {{ builder_tmpfs.stdout | default('unknown') }}"
+
+# ---------------------------------------------------------------
+# 2. Check worker status
+# ---------------------------------------------------------------
 
 - name: Check worker status
   hosts: workers
@@ -40,14 +44,60 @@
       ansible.builtin.command: systemctl is-active k3s-agent
       register: worker_k3s
       failed_when: false
+      changed_when: false
 
     - name: Check distccd state
       ansible.builtin.command: systemctl is-active distccd
       register: worker_distccd
       failed_when: false
+      changed_when: false
 
     - name: Report worker status
       ansible.builtin.debug:
         msg:
           - "Worker {{ inventory_hostname }} k3s-agent: {{ worker_k3s.stdout | default('unknown') }}"
           - "Worker {{ inventory_hostname }} distccd: {{ worker_distccd.stdout | default('unknown') }}"
+
+# ---------------------------------------------------------------
+# 3. Determine mode (builder vs cluster)
+# ---------------------------------------------------------------
+
+- name: Determine mode on builder
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - name: Compute mode based on service states
+      ansible.builtin.set_fact:
+        mode_guess: >-
+          {% if builder_k3s.stdout == 'active' and builder_distccd.stdout == 'inactive' %}
+            cluster
+          {% elif builder_k3s.stdout == 'inactive' and builder_distccd.stdout == 'active' %}
+            builder
+          {% else %}
+            mixed
+          {% endif %}
+
+    - name: Report mode guess
+      ansible.builtin.debug:
+        msg: "MODE: {{ mode_guess }}"
+
+# ---------------------------------------------------------------
+# 4. Final summary banner
+# ---------------------------------------------------------------
+
+- name: Mode status summary
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          MODE STATUS
+          Builder k3s-server: {{ builder_k3s.stdout | default('unknown') }}
+          Builder distccd:    {{ builder_distccd.stdout | default('unknown') }}
+          MODE GUESS:         {{ mode_guess }}
+          ------------------------------------------------------------
+          cluster = k3s ON,  distccd OFF
+          builder = k3s OFF, distccd ON
+          mixed   = transitional or inconsistent state
+          ============================================================

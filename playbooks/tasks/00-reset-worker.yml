@@ -1,0 +1,229 @@
+---
+# 00-reset-worker.yml
+# Full identity wipe + CNI/flannel purge + containerd reset
+# Canonical teardown for kubenode7 baseline
+
+# ------------------------------------------------------------
+# 1. Stop and disable k3s-agent
+# ------------------------------------------------------------
+- name: Stop and disable k3s-agent
+  service:
+    name: k3s-agent
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 2. Remove systemd units and drop-ins
+# ------------------------------------------------------------
+- name: Remove k3s-agent systemd unit and drop-ins
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/k3s-agent.service
+    - /etc/systemd/system/k3s-agent.service.d
+  ignore_errors: true
+
+- name: Daemon reload after removing units
+  systemd:
+    daemon_reload: true
+
+# ------------------------------------------------------------
+# 3. Remove kubelet projected volumes
+# ------------------------------------------------------------
+- name: Unmount kubelet projected volumes
+  shell: |
+    mount | grep '/var/lib/kubelet/pods' | awk '{print $3}' | xargs -r umount -f
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 4. Remove Rancher node identity
+# ------------------------------------------------------------
+- name: Remove rancher node identity
+  file:
+    path: /etc/rancher/node
+    state: absent
+
+# ------------------------------------------------------------
+# 5. Remove k3s config directory
+# ------------------------------------------------------------
+- name: Remove k3s config directory
+  file:
+    path: /etc/rancher/k3s
+    state: absent
+
+# ------------------------------------------------------------
+# 6. Remove stale k3s-agent environment file (CRITICAL FIX)
+# ------------------------------------------------------------
+- name: Remove stale k3s-agent environment file
+  file:
+    path: "{{ k3s_agent_env }}"
+    state: absent
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 7. Remove full k3s state
+# ------------------------------------------------------------
+- name: Remove full k3s state
+  file:
+    path: /var/lib/rancher/k3s
+    state: absent
+
+# ------------------------------------------------------------
+# 8. Remove kubelet state
+# ------------------------------------------------------------
+- name: Remove kubelet state
+  file:
+    path: /var/lib/kubelet
+    state: absent
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 9. Remove containerd state (agent + system)
+# ------------------------------------------------------------
+- name: Remove containerd state (agent + system)
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/containerd
+    - /run/containerd
+    - /var/lib/rancher/k3s/agent/containerd
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 10. Remove CNI directories and binaries
+# ------------------------------------------------------------
+- name: Remove CNI directories and binaries
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/cni
+    - /opt/cni
+    - /var/lib/cni
+    - /var/lib/rancher/k3s/agent/etc/cni
+    - /var/lib/rancher/k3s/agent/flannel
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 11. Remove stale k3s binaries
+# ------------------------------------------------------------
+- name: Remove stale k3s binary
+  file:
+    path: /usr/local/bin/k3s
+    state: absent
+  ignore_errors: true
+
+- name: Remove stale k3s-agent binary
+  file:
+    path: /usr/local/bin/k3s-agent
+    state: absent
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 12. Force-unmount containerd shim mounts
+# ------------------------------------------------------------
+- name: Force-unmount containerd shim mounts under /run/k3s
+  shell: |
+    mount | grep '/run/k3s' | awk '{print $3}' | xargs -r umount -f
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 13. Force-unmount leftover netns mounts
+# ------------------------------------------------------------
+- name: Force-unmount leftover netns mounts
+  shell: |
+    mount | grep '/var/run/netns' | awk '{print $3}' | xargs -r umount -f
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 14. Remove stale k3s runtime dirs
+# ------------------------------------------------------------
+- name: Remove stale k3s runtime dirs
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /run/k3s
+    - /var/run/k3s
+    - /var/lib/rancher/k3s/data
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 15. Remove stale interfaces (flannel, cni0, etc.)
+# ------------------------------------------------------------
+- name: Remove stale interfaces
+  shell: |
+    ip link delete flannel.1 2>/dev/null || true
+    ip link delete cni0 2>/dev/null || true
+    ip link delete flannel-v6 2>/dev/null || true
+  ignore_errors: true
+
+# ------------------------------------------------------------
+# 16. Kernel pre-flight (module tree, overlayfs, br_netfilter, cgroup2)
+# ------------------------------------------------------------
+- name: Get running kernel version
+  shell: uname -r
+  register: kernel_version
+
+- name: Check if module tree exists
+  stat:
+    path: "/usr/lib/modules/{{ kernel_version.stdout }}"
+  register: module_tree
+
+- name: Fail if module tree missing (catastrophic)
+  fail:
+    msg: "Kernel module tree missing on {{ inventory_hostname }}"
+  when: not module_tree.stat.exists
+
+- name: Check overlayfs module presence
+  shell: modprobe -n overlay
+  register: overlay_check
+
+- name: Fail if overlayfs missing
+  fail:
+    msg: "overlayfs module missing on {{ inventory_hostname }}"
+  when: "'FATAL' in overlay_check.stdout"
+
+- name: Check br_netfilter module presence
+  shell: modprobe -n br_netfilter
+  register: brnf_check
+
+- name: Fail if br_netfilter missing
+  fail:
+    msg: "br_netfilter module missing on {{ inventory_hostname }}"
+  when: "'FATAL' in brnf_check.stdout"
+
+- name: Check bridge-nf-call-iptables
+  shell: cat /proc/sys/net/bridge/bridge-nf-call-iptables
+  register: bridge_nf
+
+- name: Fail if bridge-nf-call-iptables disabled
+  fail:
+    msg: "bridge-nf-call-iptables disabled on {{ inventory_hostname }}"
+  when: bridge_nf.stdout != "1"
+
+- name: Check if cgroup2 is mounted
+  shell: mount | grep cgroup2 || true
+  register: cgroup2_check
+
+- name: Fail if cgroup2 not mounted
+  fail:
+    msg: "cgroup2 not mounted on {{ inventory_hostname }}"
+  when: cgroup2_check.stdout == ""
+
+# ------------------------------------------------------------
+# 17. Kernel pre-flight summary
+# ------------------------------------------------------------
+- name: Kernel pre-flight summary
+  debug:
+    msg: |
+      === Kernel Pre-Flight Summary for {{ inventory_hostname }} ===
+      Kernel: {{ kernel_version.stdout }}
+      Module tree exists: {{ module_tree.stat.exists }}
+      overlayfs: OK
+      br_netfilter: OK
+      bridge-nf-call-iptables: {{ bridge_nf.stdout }}
+      cgroup2 mounted: {{ cgroup2_check.stdout != "" }}

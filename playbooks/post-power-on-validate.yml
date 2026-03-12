@@ -1,6 +1,13 @@
 ---
 # /opt/ansible-k3s-cluster/playbooks/post-power-on-validate.yml
 # Purpose: Validate cluster readiness after power-on, before any pump-mode activity.
+# Notes:
+#   - Builder block: validate distcc hostfile and parsed hosts.
+#   - Worker block: validate distccd service, port, and logs.
+
+###############################################################################
+# BUILDER VALIDATION
+###############################################################################
 
 - name: Post power-on validation (builder-local checks)
   hosts: builder
@@ -8,6 +15,7 @@
   become: false
 
   tasks:
+
     - name: Ensure distcc hostfile exists
       ansible.builtin.stat:
         path: /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
@@ -23,16 +31,10 @@
         path: /opt/ansible-k3s-cluster/manifest/distcc-hosts.yml
       register: distcc_hostfile_content
 
-    - name: Parse distcc hosts from YAML (simple hostname extraction)
+    # FIXED: robust YAML parsing for list-style hostfile
+    - name: Parse distcc hosts from YAML
       ansible.builtin.set_fact:
-        distcc_hosts_parsed: >-
-          {{
-            distcc_hostfile_content['content'] | b64decode
-            | splitlines()
-            | select('match', '^[ ]*-[ ]+[A-Za-z0-9]')
-            | map('regex_replace', '^[ ]*-[ ]+([^ ]+).*$', '\1')
-            | list
-          }}
+        distcc_hosts_parsed: "{{ distcc_hostfile_content.content | b64decode | from_yaml }}"
 
     - name: Show parsed distcc hosts
       ansible.builtin.debug:
@@ -43,6 +45,10 @@
         msg: "No distcc hosts parsed from distcc-hosts.yml"
       when: distcc_hosts_parsed | length == 0
 
+
+###############################################################################
+# WORKER VALIDATION
+###############################################################################
 
 - name: Post power-on validation (worker checks)
   hosts: distcc_workers
@@ -55,6 +61,7 @@
     distccd_log_path: /var/log/distccd/distccd.log
 
   tasks:
+
     - name: Check distccd systemd service state
       ansible.builtin.command:
         cmd: systemctl is-active {{ distccd_service_name }}

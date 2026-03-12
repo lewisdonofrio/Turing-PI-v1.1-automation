@@ -1,0 +1,30 @@
+# roles/kernel_build/vars/main.yml
+# Purpose: Define internal, non-overridable constants for the kernel build role.
+# Behavior: Provides architecture-specific constants and stable internal paths.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. These values are NOT intended to be overridden.
+# Doctrine:
+#   - vars/ contains internal constants only.
+#   - defaults/ contains user-tunable values.
+#   - no tmpfs anywhere in the system.
+
+---
+
+# =============================================================================
+# Architecture constants
+# =============================================================================
+kernel_make_arch: "{{ kernel_arch }}"
+kernel_make_cross: "{{ kernel_cross_compile }}"
+
+# =============================================================================
+# Internal paths (stable, not user-tunable)
+# =============================================================================
+kernel_build_root_internal: "/home/builder/src/kernel-build"
+kernel_source_dir_internal: "{{ kernel_build_root_internal }}/linux"
+kernel_patches_dir_internal: "{{ kernel_build_root_internal }}/patches"
+kernel_artifacts_dir_internal: "{{ kernel_build_root_internal }}/artifacts"
+
+# =============================================================================
+# Internal filenames
+# =============================================================================
+kernel_tarball_filename: "kernel.tar.xz"

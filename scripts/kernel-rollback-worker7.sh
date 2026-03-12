@@ -4,20 +4,20 @@
 #  /home/builder/scripts/kernel-rollback-worker7.sh
 #
 #  Purpose:
-#    Roll back worker7 to the previously installed kernel. This script
-#    restores the prior kernel image, DTBs, and module directory using
-#    backup copies created automatically by pacman during upgrades.
+#    Roll back worker7 to a previously backed-up kernel state:
+#    - Restore /boot
+#    - Restore /usr/lib/modules
+#    - Reboot worker7
 #
 #  Notes:
 #    - ASCII-only, nano-safe, deterministic.
-#    - No tabs, no Unicode, no timestamps.
 #    - Must be run as builder on kubenode1.
-#    - Assumes pacman backup files exist on worker7.
 # =====================================================================
 
 set -euo pipefail
 
 TARGET="kubenode7.home.lab"
+BACKUP_GLOB="/var/backups/kernel-*"
 
 # ---------------------------------------------------------------------
 #  Environment validation
@@ -33,24 +33,30 @@ if [ "$(hostname)" != "kubenode1" ]; then
     exit 1
 fi
 
-echo "Preparing to roll back kernel on worker7"
-echo
-
-# ---------------------------------------------------------------------
-#  Verify target is reachable
-# ---------------------------------------------------------------------
-
 if ! ssh "$TARGET" "echo ok" >/dev/null 2>&1; then
     echo "ERROR: Unable to reach $TARGET via SSH"
     exit 1
 fi
 
 # ---------------------------------------------------------------------
-#  Confirm rollback
+#  Select backup
 # ---------------------------------------------------------------------
 
-echo "This will restore the previous kernel on worker7."
-echo "Proceed with rollback? (yes/no)"
+echo "Available kernel backups on worker7 host (local fs):"
+ls -1d $BACKUP_GLOB 2>/dev/null | sort || echo "No backups found."
+
+LAST_BACKUP=$(ls -1d $BACKUP_GLOB 2>/dev/null | sort | tail -n 1 || true)
+
+if [ -z "$LAST_BACKUP" ]; then
+    echo "ERROR: No kernel backups found under /var/backups."
+    exit 1
+fi
+
+echo
+echo "Most recent backup will be used for rollback:"
+echo "  $LAST_BACKUP"
+echo
+echo "Proceed with rollback to this backup? This will overwrite /boot and /usr/lib/modules on $TARGET. (yes/no)"
 read answer
 
 if [ "$answer" != "yes" ]; then
@@ -59,52 +65,27 @@ if [ "$answer" != "yes" ]; then
 fi
 
 # ---------------------------------------------------------------------
-#  Restore previous kernel package
-# ---------------------------------------------------------------------
-
-echo "Restoring previous kernel package..."
-
-ssh "$TARGET" "sudo pacman -U --noconfirm /var/cache/pacman/pkg/linux-*.pkg.tar.zst"
-
-# ---------------------------------------------------------------------
-#  Restore /boot kernel files
-# ---------------------------------------------------------------------
-
-echo "Restoring /boot kernel files..."
-
-ssh "$TARGET" "sudo cp /boot/kernel-backup/kernel*.img /boot/ 2>/dev/null || echo 'No kernel backup found'"
-ssh "$TARGET" "sudo cp /boot/kernel-backup/*.dtb /boot/ 2>/dev/null || echo 'No DTB backup found'"
-ssh "$TARGET" "sudo cp -r /boot/kernel-backup/overlays /boot/ 2>/dev/null || echo 'No overlay backup found'"
-
-# ---------------------------------------------------------------------
-#  Restore modules
-# ---------------------------------------------------------------------
-
-echo "Restoring previous modules..."
-
-ssh "$TARGET" "sudo rm -rf /usr/lib/modules"
-ssh "$TARGET" "sudo cp -r /usr/lib/modules-backup /usr/lib/modules 2>/dev/null || echo 'No module backup found'"
-
-# ---------------------------------------------------------------------
-#  Confirm reboot
+#  Perform rollback
 # ---------------------------------------------------------------------
 
 echo
-echo "Rollback complete."
-echo "Reboot worker7 to return to the previous kernel? (yes/no)"
-read answer
+echo "Restoring /boot from backup..."
+ssh "$TARGET" "sudo rsync -a \"$LAST_BACKUP/boot/\" /boot/"
 
-if [ "$answer" != "yes" ]; then
-    echo "Rollback complete without reboot."
+echo
+echo "Restoring /usr/lib/modules from backup..."
+ssh "$TARGET" "sudo rsync -a \"$LAST_BACKUP/modules/\" /usr/lib/modules/"
+
+echo
+echo "Rollback complete. Reboot worker7 to apply the restored kernel? (yes/no)"
+read reboot_answer
+
+if [ "$reboot_answer" != "yes" ]; then
+    echo "Rollback performed, but reboot skipped."
     exit 0
 fi
 
-# ---------------------------------------------------------------------
-#  Reboot worker7
-# ---------------------------------------------------------------------
-
-echo "Rebooting worker7..."
+echo "Rebooting $TARGET..."
 ssh "$TARGET" "sudo reboot"
 
-echo "Worker7 is rebooting."
-echo "Use kernel-health-worker7.sh after it comes back online."
+echo "Worker7 is rebooting with restored kernel."

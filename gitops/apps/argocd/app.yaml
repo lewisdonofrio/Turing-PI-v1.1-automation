@@ -1,0 +1,30 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/gitops/apps/argocd/app.yaml
+# PURPOSE:
+#   GitOps-managed deployment of ArgoCD itself.
+#   This allows ArgoCD to self-manage upgrades and configuration.
+# =====================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
+    targetRevision: main
+    path: gitops/apps/argocd/chart
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

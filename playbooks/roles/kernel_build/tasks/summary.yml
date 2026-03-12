@@ -1,0 +1,29 @@
+# roles/kernel_build/tasks/summary.yml
+# Purpose: Provide a final summary banner for the kernel build pipeline.
+# Behavior: Reports key results from validation and confirms doctrine compliance.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - every major workflow ends with a clear ASCII summary.
+#   - no tmpfs anywhere in the system.
+#   - validation must be explicit and visible.
+
+---
+
+# =============================================================================
+# Final summary banner
+# =============================================================================
+- name: Kernel build final summary
+  ansible.builtin.debug:
+    msg: |
+      ============================================================
+      KERNEL BUILD PIPELINE COMPLETE
+      - fetch stage executed
+      - patches applied (if present)
+      - configuration finalized via olddefconfig
+      - kernel built with distcc acceleration
+      - modules + DTBs installed deterministically
+      - artifacts collected into persistent directories
+      - validation completed (zImage, DTBs, modules)
+      - tmpfs logic removed (doctrine-compliant)
+      ============================================================

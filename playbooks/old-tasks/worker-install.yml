@@ -1,0 +1,44 @@
+---
+# tasks/worker-install.yml
+# Install k3s-agent and join the cluster.
+
+- name: Fetch k3s token from master
+  delegate_to: kubenode1
+  become: yes
+  slurp:
+    src: "{{ k3s_token_file }}"
+  register: k3s_token_raw
+
+- name: Set k3s token fact
+  set_fact:
+    k3s_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+
+- name: Ensure any old k3s-agent is stopped
+  service:
+    name: k3s-agent
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Install k3s-agent (binary + service)
+  shell: |
+    curl -sfL https://get.k3s.io \
+      | INSTALL_K3S_EXEC="agent --server {{ k3s_server_url }} --token {{ k3s_token }}" \
+        sh -s -
+  args:
+    creates: /usr/local/bin/k3s-agent
+
+- name: Ensure k3s-agent service is enabled and started
+  service:
+    name: k3s-agent
+    state: started
+    enabled: yes
+
+- name: Wait for node to register with API
+  delegate_to: kubenode1
+  command: >
+    kubectl get node {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+  register: node_ready_check
+  retries: 30
+  delay: 5
+  until: node_ready_check.stdout == "True"

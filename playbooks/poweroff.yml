@@ -1,25 +1,22 @@
 # /opt/ansible-k3s-cluster/playbooks/poweroff.yml
 # Purpose: Gracefully shut down the k3s + distcc cluster in a deterministic sequence.
-# Behavior:
-#   - Stop pump-mode include-server on builder
-#   - Stop distccd on workers
-#   - Kill lingering cc1 processes
-#   - Produce a clean cluster shutdown summary
-# Notes:
-#   - ASCII-only, nano-safe, idempotent.
-#   - Safe to run repeatedly.
-
 ---
-
 # =============================================================================
 # Phase 1: Stop pump-mode include-server on builder
 # =============================================================================
-- name: Stop pump-mode include-server
+- name: Stop include-server on builder
   hosts: builder
-  become: false
+  become: true
   gather_facts: false
 
   tasks:
+
+    - name: Stop include-server if running
+      ansible.builtin.shell: |
+        pkill -f include-server || true
+      changed_when: false
+      ignore_errors: true
+
 
     - name: Stop include-server if running
       ansible.builtin.shell: |
@@ -29,68 +26,86 @@
     - name: Verify include-server stopped
       ansible.builtin.shell: |
         pgrep -f include-server && echo "running" || echo "stopped"
-      register: include_server_state
+      register: include_state
       changed_when: false
 
     - name: Report include-server state
       ansible.builtin.debug:
-        msg: "include-server: {{ include_server_state.stdout }}"
+        msg: "include-server: {{ include_state.stdout }}"
 
 # =============================================================================
-# Phase 2: Stop distccd on workers
+# Phase 2: Stop distccd + k3s-agent on workers
 # =============================================================================
-- name: Stop distccd on workers
+- name: Stop worker services
   hosts: workers
   become: true
   gather_facts: false
 
   tasks:
 
-    - name: Stop distccd service
+    - name: Stop distccd
       ansible.builtin.service:
         name: distccd
         state: stopped
-      register: distccd_stop
+      ignore_errors: true
 
-    - name: Report distccd stop state
-      ansible.builtin.debug:
-        msg: "distccd stopped on {{ inventory_hostname }}"
+    - name: Stop k3s-agent
+      ansible.builtin.service:
+        name: k3s-agent
+        state: stopped
+      ignore_errors: true
 
-# =============================================================================
-# Phase 3: Kill lingering cc1 processes on workers
-# =============================================================================
-- name: Kill lingering cc1 processes
-  hosts: workers
-  become: true
-  gather_facts: false
-
-  tasks:
-
-    - name: Kill cc1 processes
+    - name: Kill lingering cc1
       ansible.builtin.shell: |
         pkill -f cc1 || true
       changed_when: false
 
-    - name: Verify cc1 is gone
-      ansible.builtin.shell: |
-        pgrep -a cc1 || echo "none"
-      register: cc1_state
-      changed_when: false
-
-    - name: Report cc1 state
-      ansible.builtin.debug:
-        msg: "cc1 on {{ inventory_hostname }}: {{ cc1_state.stdout }}"
-
 # =============================================================================
-# Phase 4: Cluster shutdown summary
+# Phase 3: Power off workers (FIRST)
 # =============================================================================
-- name: Cluster shutdown summary
-  hosts: all
-  become: false
+- name: Power off workers
+  hosts: workers
+  become: true
   gather_facts: false
 
   tasks:
 
-    - name: Report node shutdown state
-      ansible.builtin.debug:
-        msg: "Node {{ inventory_hostname }} is clean and powered down (services stopped)"
+    - name: Powering off worker node
+      ansible.builtin.shell: |
+        systemctl poweroff
+      async: 1
+      poll: 0
+      ignore_errors: true
+
+# =============================================================================
+# Phase 4: Stop k3s-server on builder
+# =============================================================================
+- name: Stop builder services
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Stop k3s-server
+      ansible.builtin.service:
+        name: k3s
+        state: stopped
+      ignore_errors: true
+
+# =============================================================================
+# Phase 5: Power off builder (LAST)
+# =============================================================================
+- name: Power off builder
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Powering off builder node
+      ansible.builtin.shell: |
+        systemctl poweroff
+      async: 1
+      poll: 0
+      ignore_errors: true

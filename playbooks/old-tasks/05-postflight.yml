@@ -1,0 +1,51 @@
+---
+# 05-postflight.yml
+# Validate worker health after k3s-agent installation.
+
+# ------------------------------------------------------------
+# 1. Describe node for debugging
+# ------------------------------------------------------------
+- name: Describe node
+  delegate_to: kubenode1
+  command: kubectl describe node {{ inventory_hostname }}
+  register: node_desc
+
+# ------------------------------------------------------------
+# 2. Assert node is Ready
+# ------------------------------------------------------------
+- name: Assert node is Ready
+  assert:
+    that:
+      - "'Ready' in node_desc.stdout"
+      - "'True' in node_desc.stdout"
+    fail_msg: "Node {{ inventory_hostname }} is NOT Ready after onboarding."
+
+# ------------------------------------------------------------
+# 3. List pods scheduled on this worker
+# ------------------------------------------------------------
+- name: List pods on this worker
+  delegate_to: kubenode1
+  command: kubectl get pods -A -o wide --field-selector spec.nodeName={{ inventory_hostname }}
+  register: worker_pods
+
+- name: Show pods scheduled on this worker
+  debug:
+    var: worker_pods.stdout
+
+# ------------------------------------------------------------
+# 4. Assert kube-proxy is running
+# ------------------------------------------------------------
+- name: Assert kube-proxy DaemonSet pod is present
+  assert:
+    that:
+      - "'kube-proxy' in worker_pods.stdout"
+    fail_msg: "kube-proxy DaemonSet pod not found on {{ inventory_hostname }}."
+
+# ------------------------------------------------------------
+# 5. Assert flannel is running
+# ------------------------------------------------------------
+- name: Assert flannel DaemonSet pod is present
+  assert:
+    that:
+      - "'kube-flannel' in worker_pods.stdout"
+    fail_msg: "flannel DaemonSet pod not found on {{ inventory_hostname }}."

@@ -1,0 +1,49 @@
+---
+- hosts: realign_targets
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  vars:
+    flannel_conflist_src: /home/ansible/10-flannel.conflist
+    flannel_bin_src: /home/ansible/flannel
+
+  tasks:
+    - name: Wipe stale CNI dirs
+      shell: |
+        rm -rf /etc/cni/net.d/* /opt/cni/bin/* &&
+        mkdir -p /etc/cni/net.d /opt/cni/bin
+
+    - name: Install 10-flannel.conflist
+      copy:
+        src: "{{ flannel_conflist_src }}"
+        dest: /etc/cni/net.d/10-flannel.conflist
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install flannel binary
+      copy:
+        src: "{{ flannel_bin_src }}"
+        dest: /opt/cni/bin/flannel
+        owner: root
+        group: root
+        mode: '0755'
+
+- hosts: workers
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  tasks:
+    - name: Remove k3s-agent delay drop-in
+      file:
+        path: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+        state: absent
+
+    - name: Reload systemd and restart k3s-agent
+      systemd:
+        name: k3s-agent
+        daemon_reload: yes
+        state: restarted
+        enabled: yes

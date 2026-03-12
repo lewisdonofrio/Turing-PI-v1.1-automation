@@ -1,0 +1,36 @@
+# builder-kernel-build.yml
+# Purpose: Orchestrate the full kernel build pipeline on the builder node.
+# Behavior: Invokes the kernel_build role in a clean, deterministic manner.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - builder orchestrates; workers compile.
+#   - no tmpfs anywhere in the system.
+#   - every major workflow ends with a clear ASCII summary.
+
+---
+
+- name: Full kernel build pipeline
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  roles:
+    - role: kernel_build
+
+  vars:
+    # These may be overridden per-run or per-inventory
+    kernel_version: "6.6.0"
+    kernel_defconfig: "bcm2709_defconfig"
+    build_jobs: 16
+
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          KERNEL BUILD ORCHESTRATION STARTING
+          - builder: {{ inventory_hostname }}
+          - kernel version: {{ kernel_version }}
+          - defconfig: {{ kernel_defconfig }}
+          - jobs: {{ build_jobs }}
+          ============================================================

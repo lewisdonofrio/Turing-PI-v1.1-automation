@@ -4,13 +4,15 @@
 #  /home/builder/scripts/kernel-health-worker7.sh
 #
 #  Purpose:
-#    Verify that worker7 successfully booted into the newly installed
-#    kernel. This script checks kernel version, module availability,
-#    DTB presence, dmesg for critical errors, and optional k3s status.
+#    Perform a basic health check on worker7 after a kernel upgrade:
+#    - connectivity
+#    - kernel version
+#    - modules tree
+#    - systemd / k3s-agent
+#    - dmesg sanity scan
 #
 #  Notes:
 #    - ASCII-only, nano-safe, deterministic.
-#    - No tabs, no Unicode, no timestamps.
 #    - Must be run as builder on kubenode1.
 # =====================================================================
 
@@ -32,71 +34,73 @@ if [ "$(hostname)" != "kubenode1" ]; then
     exit 1
 fi
 
-echo "Checking health of worker7 after kernel reboot..."
+echo "Running kernel health check on $TARGET"
 echo
 
 # ---------------------------------------------------------------------
-#  Wait for SSH to return
+#  Connectivity and basic info
 # ---------------------------------------------------------------------
 
-echo "Waiting for SSH to become available..."
+if ! ssh "$TARGET" "echo ok" >/dev/null 2>&1; then
+    echo "ERROR: Unable to reach $TARGET via SSH"
+    exit 1
+fi
 
-for i in $(seq 1 30); do
-    if ssh "$TARGET" "echo ok" >/dev/null 2>&1; then
-        echo "SSH is up."
-        break
-    fi
-    sleep 2
-done
-
-# ---------------------------------------------------------------------
-#  Kernel version check
-# ---------------------------------------------------------------------
-
+echo "Connectivity: OK"
 echo
+
 echo "Kernel version:"
 ssh "$TARGET" "uname -a"
-
-# ---------------------------------------------------------------------
-#  Module directory check
-# ---------------------------------------------------------------------
-
 echo
-echo "Checking module directory..."
-
-ssh "$TARGET" "ls -1 /usr/lib/modules" || echo "WARNING: modules directory missing"
 
 # ---------------------------------------------------------------------
-#  DTB presence check
+#  Modules tree check
 # ---------------------------------------------------------------------
 
+echo "Checking modules directory..."
+
+ssh "$TARGET" '
+    KREL=$(uname -r)
+    MODDIR="/usr/lib/modules/$KREL"
+    if [ -d "$MODDIR" ]; then
+        echo "Modules directory exists: $MODDIR"
+        echo "Module count:"
+        find "$MODDIR" -type f -name "*.ko" | wc -l
+    else
+        echo "WARNING: Modules directory missing: $MODDIR"
+    fi
+'
 echo
-echo "Checking DTBs in /boot..."
-
-ssh "$TARGET" "ls -1 /boot/*.dtb 2>/dev/null" || echo "WARNING: DTBs missing"
 
 # ---------------------------------------------------------------------
-#  dmesg scan for critical errors
+#  Systemd and k3s-agent status
 # ---------------------------------------------------------------------
 
+echo "Checking systemd and k3s-agent status..."
+
+ssh "$TARGET" '
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl is-system-running || true
+        systemctl status k3s-agent --no-pager -l || echo "k3s-agent status unavailable"
+    else
+        echo "WARNING: systemctl not available on target"
+    fi
+'
 echo
-echo "Scanning dmesg for critical errors..."
-
-ssh "$TARGET" "dmesg | grep -i 'error\|fail\|panic' || echo 'No critical errors found'"
 
 # ---------------------------------------------------------------------
-#  Optional: k3s status
+#  dmesg sanity scan
 # ---------------------------------------------------------------------
 
+echo "Scanning dmesg for kernel errors..."
+
+ssh "$TARGET" '
+    if command -v dmesg >/dev/null 2>&1; then
+        dmesg | grep -Ei "panic|BUG:|Oops|call trace" || echo "No obvious kernel panics or oops messages found"
+    else
+        echo "WARNING: dmesg not available on target"
+    fi
+'
 echo
-echo "Checking k3s status (if installed)..."
 
-ssh "$TARGET" "systemctl is-active k3s 2>/dev/null || echo 'k3s not running or not installed'"
-
-# ---------------------------------------------------------------------
-#  Summary
-# ---------------------------------------------------------------------
-
-echo
-echo "Health check complete."
-echo "If all sections above look correct, worker7 successfully booted the new kernel."
+echo "Kernel health check complete for $TARGET."

@@ -1,0 +1,228 @@
+---
+- name: Full k3s kernel sanity check (runtime + config + alignment)
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    namespace_list:
+      - user
+      - net
+      - pid
+      - ipc
+      - uts
+
+    netfilter_modules:
+      - iptable_nat
+      - nf_nat
+      - xt_MASQUERADE
+
+    ipvs_modules:
+      - ip_vs
+      - ip_vs_rr
+      - ip_vs_wrr
+      - ip_vs_sh
+
+    bridge_modules:
+      - bridge
+      - br_netfilter
+
+  tasks:
+
+    # ============================================================
+    # 1. KERNEL ALIGNMENT CHECK (NEW — this is the missing #3 logic)
+    # ============================================================
+
+    - name: Get running kernel version
+      shell: "uname -r"
+      register: uname_r
+
+    - name: Check if module tree exists for running kernel
+      shell: "test -d /usr/lib/modules/{{ uname_r.stdout }} && echo yes || echo no"
+      register: module_tree_exists
+
+    - name: Count modules in running kernel's module tree
+      shell: "find /usr/lib/modules/{{ uname_r.stdout }}/kernel -type f 2>/dev/null | wc -l"
+      register: module_tree_count
+
+    - name: Check if kernel image exists in /boot
+      shell: "ls /boot | grep -E 'kernel|Image|zImage|uImage' || true"
+      register: boot_kernel_files
+
+    - name: Check DTBs for running kernel
+      shell: "ls /boot | grep -E '{{ uname_r.stdout }}|dtb' || true"
+      register: boot_dtbs
+
+    - name: Check if veth can be loaded (loadability test)
+      shell: "modprobe -n veth >/dev/null 2>&1 && echo yes || echo no"
+      register: veth_loadable
+
+    - name: Check if 8021q can be loaded (loadability test)
+      shell: "modprobe -n 8021q >/dev/null 2>&1 && echo yes || echo no"
+      register: q8021_loadable
+
+    # ============================================================
+    # 2. CGROUPS
+    # ============================================================
+
+    - name: Check if cgroup2 is mounted
+      shell: "mount | grep -q cgroup2 && echo yes || echo no"
+      register: cgroup2_mounted
+
+    - name: Read cgroup2 controllers
+      shell: "cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo ''"
+      register: cgroup2_ctrls
+
+    # ============================================================
+    # 3. NAMESPACES
+    # ============================================================
+
+    - name: Check namespace support
+      shell: "zgrep -q 'CONFIG_{{ item | upper }}_NS=y' /proc/config.gz && echo yes || echo no"
+      loop: "{{ namespace_list }}"
+      register: ns_results
+
+    # ============================================================
+    # 4. NETFILTER MODULES
+    # ============================================================
+
+    - name: Check netfilter modules exist
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ netfilter_modules }}"
+      register: nf_mods
+
+    - name: Check MASQUERADE usability
+      shell: |
+        iptables -t nat -A POSTROUTING -j MASQUERADE 2>/dev/null && echo yes || echo no
+      register: masq_runtime
+      ignore_errors: true
+
+    - name: Cleanup MASQUERADE test rule
+      shell: "iptables -t nat -D POSTROUTING -j MASQUERADE 2>/dev/null || true"
+
+    # ============================================================
+    # 5. IPTABLES / NFTABLES
+    # ============================================================
+
+    - name: Detect iptables backend
+      shell: "iptables -V 2>/dev/null"
+      register: ipt_version
+
+    - name: Check nft binary
+      shell: "command -v nft >/dev/null && echo yes || echo no"
+      register: nft_present
+
+    # ============================================================
+    # 6. OVERLAYFS
+    # ============================================================
+
+    - name: Check overlayfs module
+      shell: "modinfo overlay >/dev/null 2>&1 && echo yes || echo no"
+      register: overlay_mod
+
+    - name: Test overlayfs mount
+      shell: |
+        mkdir -p /tmp/ovl/{lower,upper,work,merged}
+        touch /tmp/ovl/lower/testfile
+        mount -t overlay overlay -o lowerdir=/tmp/ovl/lower,upperdir=/tmp/ovl/upper,workdir=/tmp/ovl/work /tmp/ovl/merged 2>/dev/null && echo yes || echo no
+      register: overlay_mount
+      ignore_errors: true
+
+    - name: Cleanup overlayfs mount
+      shell: "umount /tmp/ovl/merged 2>/dev/null || true"
+
+    # ============================================================
+    # 7. BRIDGE
+    # ============================================================
+
+    - name: Check bridge modules
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ bridge_modules }}"
+      register: bridge_mods
+
+    - name: Check bridge-nf-call-iptables
+      shell: "sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null || echo 0"
+      register: bridge_nf
+
+    # ============================================================
+    # 8. IPVS
+    # ============================================================
+
+    - name: Check IPVS modules
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ ipvs_modules }}"
+      register: ipvs_mods
+
+    - name: Test IPVS load
+      shell: "modprobe ip_vs 2>/dev/null && echo yes || echo no"
+      register: ipvs_load
+
+    # ============================================================
+    # 9. CONNTRACK
+    # ============================================================
+
+    - name: Check nf_conntrack module
+      shell: "modinfo nf_conntrack >/dev/null 2>&1 && echo yes || echo no"
+      register: conntrack_mod
+
+    - name: Test conntrack CLI
+      shell: "conntrack -L >/dev/null 2>&1 && echo yes || echo no"
+      register: conntrack_cli
+      ignore_errors: true
+
+    # ============================================================
+    # 10. SUMMARY
+    # ============================================================
+
+    - name: Print summary
+      debug:
+        msg: |
+          === Kernel Sanity Summary for {{ inventory_hostname }} ===
+
+          Kernel Alignment:
+            - running kernel: {{ uname_r.stdout }}
+            - module tree exists: {{ module_tree_exists.stdout }}
+            - module count: {{ module_tree_count.stdout }}
+            - veth loadable: {{ veth_loadable.stdout }}
+            - 8021q loadable: {{ q8021_loadable.stdout }}
+            - boot kernel files: {{ boot_kernel_files.stdout }}
+            - boot dtbs: {{ boot_dtbs.stdout }}
+
+          Cgroups:
+            - cgroup2 mounted: {{ cgroup2_mounted.stdout }}
+            - controllers: {{ cgroup2_ctrls.stdout }}
+
+          Namespaces:
+          {% for r in ns_results.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+
+          Netfilter:
+          {% for r in nf_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - MASQUERADE runtime: {{ masq_runtime.stdout }}
+
+          IPTables/NFT:
+            - iptables version: {{ ipt_version.stdout }}
+            - nft present: {{ nft_present.stdout }}
+
+          OverlayFS:
+            - module: {{ overlay_mod.stdout }}
+            - mount test: {{ overlay_mount.stdout }}
+
+          Bridge:
+          {% for r in bridge_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - bridge-nf-call-iptables: {{ bridge_nf.stdout }}
+
+          IPVS:
+          {% for r in ipvs_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - IPVS load: {{ ipvs_load.stdout }}
+
+          Conntrack:
+            - module: {{ conntrack_mod.stdout }}
+            - CLI usable: {{ conntrack_cli.stdout }}

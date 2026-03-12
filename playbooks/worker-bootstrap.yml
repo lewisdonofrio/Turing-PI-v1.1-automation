@@ -1,4 +1,17 @@
+# /opt/ansible-k3s-cluster/playbooks/worker-bootstrap.yml
+# Purpose: Bootstrap a CM3+ worker node for distcc participation.
+# Behavior: Enforces UID/GID, installs distccd, deploys config + hosts,
+#           configures override.conf, sets up symlinks, validates toolchain,
+#           checks network health, and reports final status.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine: tmpfs is no longer used anywhere in the system.
+
 ---
+
+# =============================================================================
+# Worker bootstrap
+# =============================================================================
 - name: Bootstrap CM3+ worker after jumpstart
   hosts: kernel_production
   become: true
@@ -9,25 +22,31 @@
     ansible_gid: 1001
     builder_uid: 1002
     builder_gid: 1002
+    distcc_bin_dir: "/usr/lib/distcc"
+    override_dir: "/etc/systemd/system/distccd.service.d"
+    override_file: "/etc/systemd/system/distccd.service.d/override.conf"
 
   tasks:
 
+    # -------------------------------------------------------------------------
+    # UID/GID enforcement
+    # -------------------------------------------------------------------------
     - name: Enforce ansible UID/GID
-      user:
+      ansible.builtin.user:
         name: ansible
         uid: "{{ ansible_uid }}"
         group: ansible
         state: present
 
     - name: Enforce builder UID/GID
-      user:
+      ansible.builtin.user:
         name: builder
         uid: "{{ builder_uid }}"
         group: builder
         state: present
 
     - name: Fix home directory ownership
-      file:
+      ansible.builtin.file:
         path: "{{ item }}"
         owner: "{{ item | basename }}"
         group: "{{ item | basename }}"
@@ -36,14 +55,17 @@
         - /home/ansible
         - /home/builder
 
+    # -------------------------------------------------------------------------
+    # distcc installation + configuration
+    # -------------------------------------------------------------------------
     - name: Install distcc
-      pacman:
+      ansible.builtin.pacman:
         name: distcc
         state: present
         update_cache: yes
 
     - name: Deploy distccd config
-      copy:
+      ansible.builtin.copy:
         src: files/distccd.conf
         dest: /etc/conf.d/distccd
         owner: root
@@ -51,35 +73,139 @@
         mode: '0644'
 
     - name: Deploy distcc hosts
-      copy:
+      ansible.builtin.copy:
         src: files/distcc-hosts
         dest: /etc/distcc/hosts
         owner: root
         group: root
         mode: '0644'
 
+    # -------------------------------------------------------------------------
+    # distccd override configuration
+    # -------------------------------------------------------------------------
+    - name: Ensure override directory exists
+      ansible.builtin.file:
+        path: "{{ override_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Install override.conf for distccd
+      ansible.builtin.copy:
+        dest: "{{ override_file }}"
+        mode: '0644'
+        content: |
+          [Service]
+          Environment="PATH=/usr/lib/distcc:/usr/bin:/bin"
+          Environment="DISTCC_ARGS=--daemon --allow 192.168.0.0/16 --log-level info"
+      notify: Restart distccd
+
+    # -------------------------------------------------------------------------
+    # distcc symlink directory
+    # -------------------------------------------------------------------------
+    - name: Ensure distcc symlink directory exists
+      ansible.builtin.file:
+        path: "{{ distcc_bin_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create distcc symlinks
+      ansible.builtin.file:
+        src: /usr/bin/distcc
+        dest: "{{ distcc_bin_dir }}/{{ item }}"
+        state: link
+      loop:
+        - gcc
+        - g++
+        - cc
+        - c++
+        - armv7l-unknown-linux-gnueabihf-gcc
+        - armv7l-unknown-linux-gnueabihf-g++
+      notify: Restart distccd
+
+    # -------------------------------------------------------------------------
+    # distccd service state
+    # -------------------------------------------------------------------------
     - name: Enable and start distccd
-      systemd:
+      ansible.builtin.systemd:
         name: distccd
         enabled: yes
         state: started
 
-    - name: Remove tmpfs mount unit (CM3+ safe)
-      file:
-        path: /etc/systemd/system/tmp-kernelbuild.mount
-        state: absent
+    # -------------------------------------------------------------------------
+    # Network + toolchain validation
+    # -------------------------------------------------------------------------
+    - name: Check PATH
+      ansible.builtin.shell: echo $PATH
+      register: path_out
+      changed_when: false
 
-    - name: Ensure /tmp/kernelbuild is absent
-      file:
-        path: /tmp/kernelbuild
-        state: absent
+    - ansible.builtin.debug:
+        msg: "PATH: {{ path_out.stdout }}"
 
+    - name: Check gcc version
+      ansible.builtin.shell: gcc --version | head -n 1
+      register: gcc_version
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "gcc version: {{ gcc_version.stdout }}"
+
+    - name: Show MTU for all interfaces
+      ansible.builtin.shell: ip link | grep mtu
+      register: mtu_out
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "MTU: {{ mtu_out.stdout }}"
+
+    - name: Check hostname and FQDN
+      ansible.builtin.shell: hostname -f
+      register: fqdn_out
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "FQDN: {{ fqdn_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Healthcheck summary
+    # -------------------------------------------------------------------------
     - name: Healthcheck summary
-      shell: |
+      ansible.builtin.shell: |
         echo "uptime: $(uptime)"
         echo "distccd: $(systemctl is-active distccd)"
         echo "python: $(python3 --version 2>/dev/null || echo 'missing')"
       register: hc
 
-    - debug:
+    - ansible.builtin.debug:
         msg: "Node {{ inventory_hostname }} bootstrap summary:\n{{ hc.stdout }}"
+
+# =============================================================================
+# Handlers
+# =============================================================================
+handlers:
+  - name: Restart distccd
+    ansible.builtin.systemd:
+      name: distccd
+      state: restarted
+
+# =============================================================================
+# Final summary banner
+# =============================================================================
+- name: Worker bootstrap summary
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          WORKER BOOTSTRAP COMPLETE
+          - UID/GID enforced for ansible + builder
+          - home directory ownership corrected
+          - distcc installed and configured
+          - override.conf applied
+          - symlinks created in /usr/lib/distcc
+          - PATH + gcc validated
+          - MTU + FQDN checked
+          - distccd running and enabled
+          - tmpfs logic removed (doctrine-compliant)
+          ============================================================

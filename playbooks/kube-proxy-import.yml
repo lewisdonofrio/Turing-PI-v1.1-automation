@@ -1,0 +1,69 @@
+---
+# kube-proxy-import.yml
+# Pure Ansible. No community.general. No shell.
+
+- name: Import kube-proxy image into k3s containerd
+  hosts: workers
+  become: yes
+  gather_facts: no
+
+  vars:
+    kube_proxy_src: "/opt/kube-proxy-v1.34-armv7-glibc.tar"
+    kube_proxy_dest: "/tmp/kube-proxy-v1.34-armv7-glibc.tar"
+    kube_proxy_image: "docker.io/library/kube-proxy:v1.34-armv7-glibc"
+    ctr_bin: "/var/lib/rancher/k3s/data/current/bin/ctr"
+    #ctr_sock: "/run/k3s/containerd/containerd.sock"
+    ctr_sock: "/run/containerd/containerd.sock"
+  tasks:
+
+    - name: Copy kube-proxy tarball to worker
+      ansible.builtin.copy:
+        src: "{{ kube_proxy_src }}"
+        dest: "{{ kube_proxy_dest }}"
+        mode: '0644'
+
+    - name: Check if k3s containerd socket exists
+      ansible.builtin.stat:
+        path: "{{ ctr_sock }}"
+      register: sock
+
+    - name: Skip node if k3s containerd is not running yet
+      ansible.builtin.debug:
+        msg: "k3s containerd not running yet on {{ inventory_hostname }} — skipping import"
+      when: not sock.stat.exists
+
+    - name: Check if kube-proxy image already exists
+      ansible.builtin.command:
+        cmd: >
+          {{ ctr_bin }}
+          --address {{ ctr_sock }}
+          -n k8s.io images ls
+      register: ctr_images
+      changed_when: false
+      when: sock.stat.exists
+
+    - name: Import kube-proxy image if missing
+      ansible.builtin.command:
+        cmd: >
+          {{ ctr_bin }}
+          --address {{ ctr_sock }}
+          -n k8s.io images import {{ kube_proxy_dest }}
+      when:
+        - sock.stat.exists
+        - kube_proxy_image not in ctr_images.stdout
+
+    - name: Verify kube-proxy image is present
+      ansible.builtin.command:
+        cmd: >
+          {{ ctr_bin }}
+          --address {{ ctr_sock }}
+          -n k8s.io images ls
+      register: verify_images
+      changed_when: false
+      failed_when: kube_proxy_image not in verify_images.stdout
+      when: sock.stat.exists
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: "kube-proxy image imported and verified on {{ inventory_hostname }}"
+      when: sock.stat.exists

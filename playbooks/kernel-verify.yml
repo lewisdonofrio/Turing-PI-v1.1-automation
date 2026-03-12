@@ -2,20 +2,21 @@
 #  /opt/ansible-k3s-cluster/playbooks/kernel-verify.yml
 # =====================================================================
 #  Purpose:
-#    Verify that the newly installed kernel, DTBs, and modules are
-#    present, complete, and ready for activation. This playbook checks
-#    installation state ONLY. It does not validate build artifacts,
-#    distribute files, or reboot nodes.
+#    Verify that the newly installed kernel, DTBs, overlays, metadata,
+#    and modules are present and structurally complete. This playbook
+#    checks installation state ONLY. It does not reboot or compare
+#    uname -r.
 #
 #  Usage:
 #    ansible-playbook \
 #      -i /opt/ansible-k3s-cluster/inventory/hosts \
-#      /opt/ansible-k3s-cluster/playbooks/kernel-verify.yml
+#      /opt/ansible-k3s-cluster/playbooks/kernel-verify.yml \
+#      -e "kernelrelease=6.18.1-rpi"
 #
 #  Notes:
 #    - Must be run AFTER kernel-install.yml.
-#    - Does NOT compare uname -r (that happens after reboot).
-#    - Ensures /boot, DTBs, and /lib/modules/<version> are correct.
+#    - Ensures /boot, DTBs, overlays, and
+#      /usr/lib/modules/<kernelrelease> are correct.
 #    - ASCII-only, nano-safe, deterministic, idempotent.
 # =====================================================================
 
@@ -25,39 +26,66 @@
   gather_facts: no
 
   vars:
-    kernel_version: "6.18.1-rpi"
     boot_dir: "/boot"
-    image_path: "/boot/kernel-{{ kernel_version }}"
-    dtbs_path: "/boot/dtbs-{{ kernel_version }}"
-    modules_path: "/lib/modules/{{ kernel_version }}"
-    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
-
-  environment:
-    PATH: "{{ kernel_safe_path }}"
+    modules_dir: "/usr/lib/modules/{{ kernelrelease }}"
+    zimage_path: "{{ boot_dir }}/zImage-{{ kernelrelease }}"
+    image_path: "{{ boot_dir }}/Image-{{ kernelrelease }}"
+    vmlinux_path: "{{ boot_dir }}/vmlinux-{{ kernelrelease }}"
+    dtbs_path: "{{ boot_dir }}/dtbs-{{ kernelrelease }}"
 
   tasks:
 
     ###################################################################
-    # 1. Verify kernel Image
+    # 1. Verify kernel images
     ###################################################################
 
-    - name: Check kernel Image exists
+    - name: Check zImage exists
+      stat:
+        path: "{{ zimage_path }}"
+      register: zimage_check
+
+    - name: Fail if zImage is missing
+      fail:
+        msg: "zImage missing on {{ inventory_hostname }} at {{ zimage_path }}"
+      when: not zimage_check.stat.exists
+
+    - name: Fail if zImage is zero bytes
+      fail:
+        msg: "zImage is zero bytes on {{ inventory_hostname }} at {{ zimage_path }}"
+      when: zimage_check.stat.size == 0
+
+    - name: Check Image exists
       stat:
         path: "{{ image_path }}"
       register: image_check
 
-    - name: Fail if kernel Image is missing
+    - name: Fail if Image is missing
       fail:
-        msg: "Kernel Image missing on {{ inventory_hostname }} at {{ image_path }}"
+        msg: "Image missing on {{ inventory_hostname }} at {{ image_path }}"
       when: not image_check.stat.exists
 
-    - name: Fail if kernel Image is zero bytes
+    - name: Fail if Image is zero bytes
       fail:
-        msg: "Kernel Image is zero bytes on {{ inventory_hostname }} at {{ image_path }}"
+        msg: "Image is zero bytes on {{ inventory_hostname }} at {{ image_path }}"
       when: image_check.stat.size == 0
 
+    - name: Check vmlinux exists
+      stat:
+        path: "{{ vmlinux_path }}"
+      register: vmlinux_check
+
+    - name: Fail if vmlinux is missing
+      fail:
+        msg: "vmlinux missing on {{ inventory_hostname }} at {{ vmlinux_path }}"
+      when: not vmlinux_check.stat.exists
+
+    - name: Fail if vmlinux is zero bytes
+      fail:
+        msg: "vmlinux is zero bytes on {{ inventory_hostname }} at {{ vmlinux_path }}"
+      when: vmlinux_check.stat.size == 0
+
     ###################################################################
-    # 2. Verify DTBs
+    # 2. Verify DTBs and overlays
     ###################################################################
 
     - name: Check DTBs directory exists
@@ -82,36 +110,95 @@
         msg: "No DTB files found on {{ inventory_hostname }} in {{ dtbs_path }}"
       when: dtb_files.matched == 0
 
+    - name: Check overlays directory exists
+      stat:
+        path: "{{ dtbs_path }}/overlays"
+      register: overlays_check
+
+    - name: Fail if overlays directory is missing
+      fail:
+        msg: "Overlays directory missing on {{ inventory_hostname }} at {{ dtbs_path }}/overlays"
+      when: not overlays_check.stat.exists
+
+    - name: Check overlays contain at least one .dtbo file
+      find:
+        paths: "{{ dtbs_path }}/overlays"
+        patterns: "*.dtbo"
+        file_type: file
+      register: dtbo_files
+
+    - name: Fail if no DTBO files found
+      fail:
+        msg: "No DTBO overlay files found on {{ inventory_hostname }} in {{ dtbs_path }}/overlays"
+      when: dtbo_files.matched == 0
+
     ###################################################################
     # 3. Verify modules
     ###################################################################
 
     - name: Check modules directory exists
       stat:
-        path: "{{ modules_path }}"
+        path: "{{ modules_dir }}"
       register: modules_check
 
     - name: Fail if modules directory is missing
       fail:
-        msg: "Modules directory missing on {{ inventory_hostname }} at {{ modules_path }}"
+        msg: "Modules directory missing on {{ inventory_hostname }} at {{ modules_dir }}"
       when: not modules_check.stat.exists
 
     - name: Check for .ko files
       find:
-        paths: "{{ modules_path }}"
+        paths: "{{ modules_dir }}"
         patterns: "*.ko"
         file_type: file
       register: ko_files
 
     - name: Fail if no kernel modules found
       fail:
-        msg: "No .ko modules found on {{ inventory_hostname }} under {{ modules_path }}"
+        msg: "No .ko modules found on {{ inventory_hostname }} under {{ modules_dir }}"
       when: ko_files.matched == 0
 
     ###################################################################
-    # 4. Final confirmation
+    # 4. Verify boot symlinks
+    ###################################################################
+
+    - name: Check /boot/zImage symlink points at zImage-{{ kernelrelease }}
+      stat:
+        path: "{{ boot_dir }}/zImage"
+        follow: false
+      register: zimage_link
+
+    - name: Warn if /boot/zImage is not a symlink
+      debug:
+        msg: "/boot/zImage is not a symlink on {{ inventory_hostname }}"
+      when: zimage_link.stat.islnk is not defined or not zimage_link.stat.islnk
+
+    - name: Check /boot/Image symlink points at Image-{{ kernelrelease }}
+      stat:
+        path: "{{ boot_dir }}/Image"
+        follow: false
+      register: image_link
+
+    - name: Warn if /boot/Image is not a symlink
+      debug:
+        msg: "/boot/Image is not a symlink on {{ inventory_hostname }}"
+      when: image_link.stat.islnk is not defined or not image_link.stat.islnk
+
+    - name: Check /boot/dtbs symlink points at dtbs-{{ kernelrelease }}
+      stat:
+        path: "{{ boot_dir }}/dtbs"
+        follow: false
+      register: dtbs_link
+
+    - name: Warn if /boot/dtbs is not a symlink
+      debug:
+        msg: "/boot/dtbs is not a symlink on {{ inventory_hostname }}"
+      when: dtbs_link.stat.islnk is not defined or not dtbs_link.stat.islnk
+
+    ###################################################################
+    # 5. Final confirmation
     ###################################################################
 
     - name: Kernel installation verified
       debug:
-        msg: "Kernel {{ kernel_version }} installation verified on {{ inventory_hostname }}."
+        msg: "Kernel {{ kernelrelease }} installation verified on {{ inventory_hostname }}."

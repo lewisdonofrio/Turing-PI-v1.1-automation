@@ -1,0 +1,41 @@
+---
+- hosts: workers
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  tasks:
+    - name: Ensure drop-in directory exists
+      file:
+        path: /etc/systemd/system/k3s-agent.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install deterministic startup delay and safety gates
+      copy:
+        dest: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          # Ensure k3s binary exists before starting
+          ExecStartPre=/usr/bin/test -x /usr/local/bin/k3s
+
+          # Enforce per-node staggered delay from inventory
+          ExecStartPre=/bin/sleep {{ agent_delay }}
+
+          # Ensure agent has enough time to start cleanly
+          TimeoutStartSec=300
+      when: agent_delay is defined
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: Restart k3s-agent
+      systemd:
+        name: k3s-agent
+        state: restarted

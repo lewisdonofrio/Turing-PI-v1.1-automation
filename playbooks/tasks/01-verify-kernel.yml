@@ -1,0 +1,85 @@
+---
+# 01-verify-kernel.yml
+# Minimal pre-flight kernel sanity check for worker onboarding
+# This is NOT the full kernel audit. That is done by k3s-kernel-verify.yml.
+
+# ------------------------------------------------------------
+# 1. Ensure running kernel has a module tree
+# ------------------------------------------------------------
+- name: Get running kernel version
+  shell: uname -r
+  register: uname_r
+
+- name: Check if module tree exists
+  shell: "test -d /usr/lib/modules/{{ uname_r.stdout }} && echo yes || echo no"
+  register: module_tree_exists
+
+- name: Fail if module tree missing (catastrophic)
+  fail:
+    msg: >
+      Module tree missing for kernel {{ uname_r.stdout }}.
+      Worker cannot run k3s-agent without a valid module tree.
+  when: module_tree_exists.stdout != "yes"
+
+# ------------------------------------------------------------
+# 2. Ensure overlayfs exists (required for containerd)
+# ------------------------------------------------------------
+- name: Check overlayfs module presence
+  shell: "modinfo overlay >/dev/null 2>&1 && echo yes || echo no"
+  register: overlay_mod
+
+- name: Fail if overlayfs missing
+  fail:
+    msg: "overlayfs module missing. Containerd cannot function."
+  when: overlay_mod.stdout != "yes"
+
+# ------------------------------------------------------------
+# 3. Ensure br_netfilter exists (required for kube-proxy + flannel)
+# ------------------------------------------------------------
+- name: Check br_netfilter module presence
+  shell: "modinfo br_netfilter >/dev/null 2>&1 && echo yes || echo no"
+  register: brnf_mod
+
+- name: Fail if br_netfilter missing
+  fail:
+    msg: "br_netfilter module missing. Kubernetes networking will not function."
+  when: brnf_mod.stdout != "yes"
+
+# ------------------------------------------------------------
+# 4. Ensure bridge-nf-call-iptables is enabled
+# ------------------------------------------------------------
+- name: Check bridge-nf-call-iptables
+  shell: "sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null || echo 0"
+  register: bridge_nf
+
+- name: Fail if bridge-nf-call-iptables disabled
+  fail:
+    msg: "bridge-nf-call-iptables is disabled. Kubernetes networking will break."
+  when: bridge_nf.stdout != "1"
+
+# ------------------------------------------------------------
+# 5. Ensure cgroup2 is mounted (ArchLinuxARM default)
+# ------------------------------------------------------------
+- name: Check if cgroup2 is mounted
+  shell: "mount | grep -q cgroup2 && echo yes || echo no"
+  register: cgroup2_mounted
+
+- name: Fail if cgroup2 not mounted
+  fail:
+    msg: "cgroup2 is not mounted. k3s-agent cannot start."
+  when: cgroup2_mounted.stdout != "yes"
+
+# ------------------------------------------------------------
+# 6. Summary (non-fatal)
+# ------------------------------------------------------------
+- name: Kernel pre-flight summary
+  debug:
+    msg: |
+      === Kernel Pre-Flight Summary for {{ inventory_hostname }} ===
+      Kernel: {{ uname_r.stdout }}
+      Module tree exists: {{ module_tree_exists.stdout }}
+      overlayfs: {{ overlay_mod.stdout }}
+      br_netfilter: {{ brnf_mod.stdout }}
+      bridge-nf-call-iptables: {{ bridge_nf.stdout }}
+      cgroup2 mounted: {{ cgroup2_mounted.stdout }}
+

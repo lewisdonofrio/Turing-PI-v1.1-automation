@@ -1,0 +1,48 @@
+---
+- name: Migrate worker nodes to nft backend
+  hosts: workers
+  become: yes
+  gather_facts: yes
+  serial: 1
+
+  tasks:
+
+    - name: Ensure stale arptables/ebtables files are removed
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/bin/arptables
+        - /usr/bin/ebtables
+
+    - name: Force-remove legacy iptables (safe + required)
+      command: pacman -Rdd --noconfirm iptables
+      register: remove_iptables
+      failed_when: false
+
+    - name: Install nft backend
+      command: pacman -S --noconfirm iptables-nft
+
+    - name: Flush all iptables rules (ignore busy chains)
+      command: "{{ item }}"
+      loop:
+        - iptables -F
+        - iptables -t nat -F
+        - iptables -t mangle -F
+        - iptables -t raw -F
+        - iptables -X
+      ignore_errors: yes
+
+    - name: Restart k3s-agent
+      systemd:
+        name: k3s-agent
+        state: restarted
+
+    - name: Verify backend is nft
+      command: iptables --version
+      register: ipt_ver
+
+    - name: Fail if backend is not nft
+      fail:
+        msg: "Node did not switch to nft backend: {{ ipt_ver.stdout }}"
+      when: "'nf_tables' not in ipt_ver.stdout"

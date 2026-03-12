@@ -1,0 +1,13 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/loki.yaml
+# PURPOSE:
+#   Minimal Loki stack config for log aggregation on ARMv7.
+#   Uses filesystem storage and small resource footprint.
+# =====================================================================
+
+loki:
+  persistence:
+    enabled: false
+
+promtail:
+  enabled: true

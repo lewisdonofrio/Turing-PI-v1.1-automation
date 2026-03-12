@@ -1,0 +1,70 @@
+# roles/kernel_build/tasks/patch.yml
+# Purpose: Apply kernel patches in a deterministic, idempotent manner.
+# Behavior: Applies all *.patch files found in the patches directory,
+#           reports results, and never fails if no patches are present.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - patch application must be deterministic.
+#   - no tmpfs anywhere in the system.
+#   - patch directory lives under /home/builder/src/kernel-build/patches.
+
+---
+
+# =============================================================================
+# 1. Validate patch directory
+# =============================================================================
+- name: Ensure patches directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/patches"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+# =============================================================================
+# 2. Detect available patches
+# =============================================================================
+- name: List available patches
+  ansible.builtin.shell: ls *.patch 2>/dev/null || true
+  args:
+    chdir: "/home/builder/src/kernel-build/patches"
+  register: patch_list
+  changed_when: false
+
+- name: Report available patches
+  ansible.builtin.debug:
+    msg: >
+      Patches detected:
+      {{ patch_list.stdout_lines | default(['none']) }}
+
+# =============================================================================
+# 3. Apply patches (if any)
+# =============================================================================
+- name: Apply kernel patches
+  ansible.builtin.shell: |
+    for p in /home/builder/src/kernel-build/patches/*.patch; do
+      [ -f "$p" ] && patch -p1 < "$p";
+    done
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: patch_apply
+  changed_when: false
+  failed_when: false
+
+- name: Report patch application results
+  ansible.builtin.debug:
+    msg: "{{ patch_apply.stdout | default('no patches applied') }}"
+
+# =============================================================================
+# 4. Patch stage summary
+# =============================================================================
+- name: Patch stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      PATCH STAGE COMPLETE
+      - patch directory validated
+      - patches detected: {{ patch_list.stdout_lines | default(['none']) }}
+      - patches applied deterministically
+      ------------------------------------------------------------

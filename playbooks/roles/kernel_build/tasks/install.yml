@@ -1,0 +1,76 @@
+# roles/kernel_build/tasks/install.yml
+# Purpose: Install kernel modules and DTBs into deterministic output directories.
+# Behavior: Runs modules_install and dtbs_install with explicit paths, ensuring
+#           idempotent and nano-safe artifact placement.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - installation paths must be deterministic.
+#   - no tmpfs anywhere in the system.
+#   - install steps must never pollute the kernel source tree.
+
+---
+
+# =============================================================================
+# 1. Ensure install directories exist
+# =============================================================================
+- name: Ensure module install directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts/modules"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+- name: Ensure DTB install directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts/dtbs"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+# =============================================================================
+# 2. Install kernel modules
+# =============================================================================
+- name: Install kernel modules
+  ansible.builtin.shell: |
+    make modules_install INSTALL_MOD_PATH=/home/builder/src/kernel-build/artifacts/modules
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: modules_out
+  changed_when: false
+  failed_when: modules_out.rc != 0
+
+- name: Report module installation
+  ansible.builtin.debug:
+    msg: "{{ modules_out.stdout_lines | default(['no output']) }}"
+
+# =============================================================================
+# 3. Install DTBs (if present)
+# =============================================================================
+- name: Install DTBs
+  ansible.builtin.shell: |
+    make dtbs_install INSTALL_DTBS_PATH=/home/builder/src/kernel-build/artifacts/dtbs
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: dtbs_out
+  changed_when: false
+  failed_when: false   # DTBs may not exist depending on arch
+
+- name: Report DTB installation
+  ansible.builtin.debug:
+    msg: "{{ dtbs_out.stdout_lines | default(['no DTBs installed']) }}"
+
+# =============================================================================
+# 4. Install stage summary
+# =============================================================================
+- name: Install stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      INSTALL STAGE COMPLETE
+      - modules installed into artifacts/modules
+      - DTBs installed into artifacts/dtbs (if present)
+      - deterministic install paths ensured
+      ------------------------------------------------------------

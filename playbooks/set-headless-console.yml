@@ -1,0 +1,102 @@
+---
+- name: Enforce headless HDMI console profile on CM3+ nodes
+  hosts: all
+  become: yes
+
+  vars:
+    # Adjust if you want 32M instead
+    cma_value: "64M"
+
+  tasks:
+
+    ###########################################################################
+    # CONFIG.TXT FIXES
+    ###########################################################################
+
+    - name: Ensure vc4 KMS overlay is removed
+      lineinfile:
+        path: /boot/config.txt
+        regexp: '^dtoverlay=vc4-.*'
+        state: absent
+      notify: reboot_required
+
+    - name: Ensure max_framebuffers is removed
+      lineinfile:
+        path: /boot/config.txt
+        regexp: '^max_framebuffers='
+        state: absent
+      notify: reboot_required
+
+    - name: Ensure disable_fw_kms_setup is removed
+      lineinfile:
+        path: /boot/config.txt
+        regexp: '^disable_fw_kms_setup='
+        state: absent
+      notify: reboot_required
+
+    - name: Ensure disable-vc4 overlay is present
+      lineinfile:
+        path: /boot/config.txt
+        insertafter: EOF
+        line: "dtoverlay=disable-vc4"
+      notify: reboot_required
+
+    - name: Ensure HDMI mode is set for simplefb
+      lineinfile:
+        path: /boot/config.txt
+        insertafter: EOF
+        line: "{{ item }}"
+      loop:
+        - "hdmi_group=1"
+        - "hdmi_mode=16"
+      notify: reboot_required
+
+    - name: Ensure firmware framebuffer is enabled
+      lineinfile:
+        path: /boot/config.txt
+        insertafter: EOF
+        line: "framebuffer=1"
+      notify: reboot_required
+
+    - name: Ensure CMA is set
+      lineinfile:
+        path: /boot/config.txt
+        regexp: '^cma='
+        line: "cma={{ cma_value }}"
+        insertafter: EOF
+      notify: reboot_required
+
+
+    ###########################################################################
+    # CMDLINE.TXT FIXES — SAFE, SINGLE-LINE PRESERVING
+    ###########################################################################
+
+    - name: Read current cmdline.txt
+      slurp:
+        path: /boot/cmdline.txt
+      register: cmdline_raw
+
+    - name: Normalize cmdline into a single string
+      set_fact:
+        cmdline: "{{ cmdline_raw.content | b64decode | trim }}"
+
+    - name: Ensure console=tty1 is present
+      set_fact:
+        cmdline: "{{ cmdline | regex_replace('console=tty1', '') | trim + ' console=tty1' }}"
+      when: "'console=tty1' not in cmdline"
+
+    - name: Ensure console=ttyAMA0,115200 is present
+      set_fact:
+        cmdline: "{{ cmdline | regex_replace('console=ttyAMA0,115200', '') | trim + ' console=ttyAMA0,115200' }}"
+      when: "'console=ttyAMA0,115200' not in cmdline"
+
+    - name: Write updated cmdline.txt
+      copy:
+        dest: /boot/cmdline.txt
+        content: "{{ cmdline }}\n"
+      notify: reboot_required
+
+  handlers:
+    - name: reboot_required
+      debug:
+        msg: "Reboot required after playbook run."

@@ -1,0 +1,143 @@
+# =====================================================================
+# 02-ground-worker.yml
+# PURPOSE:
+#   Prepare a worker node for k3s-agent bootstrap by enforcing all
+#   host prerequisites required for kube-proxy, flannel, and the
+#   embedded containerd to initialize deterministically.
+#
+# DOCTRINE:
+#   - No node joins without grounding.
+#   - All hostPath prerequisites must exist BEFORE k3s-agent starts.
+#   - kube-proxy kubeconfig must be present or the node WILL deadlock.
+#   - containerd must exist to allow image preload BEFORE runtime unpack.
+#   - Required images must be imported BEFORE kubelet attempts to start pods.
+#   - Grounding is idempotent, explicit, and 2AM-safe.
+#
+# NOTES:
+#   - This file is ASCII-only and nano-safe.
+#   - All paths are absolute.
+#   - All tasks are deterministic.
+# =====================================================================
+
+- name: 02-ground-worker
+  hosts: worker
+  become: yes
+  gather_facts: yes
+
+  vars:
+    kube_proxy_kubeconfig_source: "/var/lib/kube-proxy/kubeconfig"
+    kube_proxy_kubeconfig_dest:   "/var/lib/kube-proxy/kubeconfig"
+
+    required_images:
+      - "/home/alarm/kube-proxy-v1.34-armv7-glibc.tar"
+      # Add additional images here if needed:
+      # - "/home/alarm/flannel-v0.28.1-armv7.tar"
+      # - "/home/alarm/your-custom-image.tar"
+
+  tasks:
+
+    # -----------------------------------------------------------------
+    # SECTION 1: HostPath prerequisites for kube-proxy
+    # -----------------------------------------------------------------
+    - name: Ensure /var/lib/kube-proxy directory exists
+      file:
+        path: /var/lib/kube-proxy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags: kubeproxy
+
+    - name: Copy kube-proxy kubeconfig from control plane
+      copy:
+        src: "{{ kube_proxy_kubeconfig_source }}"
+        dest: "{{ kube_proxy_kubeconfig_dest }}"
+        owner: root
+        group: root
+        mode: "0600"
+      tags: kubeproxy
+      # DOCTRINE:
+      #   kube-proxy DaemonSet mounts this file via hostPath.
+      #   If missing, kube-proxy stays in ContainerCreating forever.
+      #   This was the root cause of worker3's 14-hour deadlock.
+
+    # -----------------------------------------------------------------
+    # SECTION 2: Ensure system containerd exists (stabilizes image preload)
+    # -----------------------------------------------------------------
+    - name: Install containerd (ensures ctr exists before k3s runtime unpack)
+      package:
+        name: containerd
+        state: present
+      tags: containerd
+
+    - name: Ensure containerd service is running
+      service:
+        name: containerd
+        state: started
+        enabled: yes
+      tags: containerd
+      # DOCTRINE:
+      #   Worker2 had containerd, worker3 did not.
+      #   This inconsistency caused image preload failures.
+      #   containerd provides a stable ctr binary BEFORE k3s-agent unpacks.
+
+    # -----------------------------------------------------------------
+    # SECTION 3: Preload required images into containerd
+    # -----------------------------------------------------------------
+    - name: Import required images into containerd
+      shell: |
+        ctr -n k8s.io images import "{{ item }}"
+      loop: "{{ required_images }}"
+      args:
+        warn: false
+      tags: images
+      # DOCTRINE:
+      #   kube-proxy has pullPolicy=Never.
+      #   If the image is not present, the node WILL deadlock.
+      #   Preloading guarantees kube-proxy starts immediately.
+
+    # -----------------------------------------------------------------
+    # SECTION 4: Stop k3s-agent BEFORE grounding (idempotent)
+    # -----------------------------------------------------------------
+    - name: Stop k3s-agent if running
+      service:
+        name: k3s-agent
+        state: stopped
+      ignore_errors: yes
+      tags: agent
+      # DOCTRINE:
+      #   Grounding must occur BEFORE k3s-agent starts.
+      #   If agent is already running, stop it to avoid partial bootstrap.
+
+    # -----------------------------------------------------------------
+    # SECTION 5: Start k3s-agent AFTER grounding
+    # -----------------------------------------------------------------
+    - name: Start k3s-agent
+      service:
+        name: k3s-agent
+        state: started
+        enabled: yes
+      tags: agent
+      # DOCTRINE:
+      #   This is the moment the node joins.
+      #   All prerequisites are now satisfied.
+      #   kube-proxy will start immediately.
+      #   flannel will initialize cleanly.
+      #   runtime bundle will unpack without delay.
+
+    # -----------------------------------------------------------------
+    # SECTION 6: Post-bootstrap verification (optional but recommended)
+    # -----------------------------------------------------------------
+    - name: Wait for node to register with control plane
+      shell: |
+        kubectl get node "{{ inventory_hostname }}" --no-headers
+      register: node_status
+      retries: 30
+      delay: 5
+      until: node_status.rc == 0
+      delegate_to: kubenode1
+      tags: verify
+      # DOCTRINE:
+      #   Ensures the node actually joined.
+      #   Prevents silent bootstrap failures.
+

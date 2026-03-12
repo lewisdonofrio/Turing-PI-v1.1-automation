@@ -1,0 +1,80 @@
+# builder-kernel-clean.yml
+# Purpose: Clean the kernel build workspace on the builder node.
+# Behavior: Removes old artifacts, source trees, and tarballs in a safe,
+#           deterministic manner without touching anything outside the
+#           kernel build root.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - cleanup must be explicit and non-destructive.
+#   - only the kernel build root may be touched.
+#   - no tmpfs anywhere in the system.
+
+---
+
+- name: Clean kernel build workspace
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    kernel_build_root: "/home/builder/src/kernel-build"
+
+  tasks:
+
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          KERNEL BUILD CLEAN STARTING
+          - builder: {{ inventory_hostname }}
+          - build root: {{ kernel_build_root }}
+          ============================================================
+
+    # -------------------------------------------------------------------------
+    # 1. Remove artifacts
+    # -------------------------------------------------------------------------
+    - name: Remove artifacts directory
+      ansible.builtin.file:
+        path: "{{ kernel_build_root }}/artifacts"
+        state: absent
+
+    # -------------------------------------------------------------------------
+    # 2. Remove kernel source tree
+    # -------------------------------------------------------------------------
+    - name: Remove kernel source tree
+      ansible.builtin.file:
+        path: "{{ kernel_build_root }}/linux"
+        state: absent
+
+    # -------------------------------------------------------------------------
+    # 3. Remove tarball
+    # -------------------------------------------------------------------------
+    - name: Remove kernel tarball
+      ansible.builtin.file:
+        path: "{{ kernel_build_root }}/kernel.tar.xz"
+        state: absent
+
+    # -------------------------------------------------------------------------
+    # 4. Preserve patches directory (doctrine: patches are user-provided)
+    # -------------------------------------------------------------------------
+    - name: Ensure patches directory exists
+      ansible.builtin.file:
+        path: "{{ kernel_build_root }}/patches"
+        state: directory
+        owner: builder
+        group: builder
+        mode: '0755'
+
+    # -------------------------------------------------------------------------
+    # 5. Final summary
+    # -------------------------------------------------------------------------
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          KERNEL BUILD CLEAN COMPLETE
+          - artifacts removed
+          - source tree removed
+          - tarball removed
+          - patches preserved
+          - workspace ready for fresh build
+          ============================================================

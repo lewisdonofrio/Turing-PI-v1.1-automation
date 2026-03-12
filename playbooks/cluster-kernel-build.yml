@@ -1,5 +1,5 @@
 # =============================================================================
-# File: /opt/ansible-k3s-cluster/cluster-kernel-build.yml
+## TMPFS-PURGED # File: /opt/ansible-k3s-cluster/cluster-kernel-build.yml
 # =============================================================================
 # Purpose:
 #   Perform a distributed Raspberry Pi kernel build using distcc.
@@ -14,10 +14,10 @@
 #   - Required k3s netfilter options enforced in .config
 #
 # Usage:
-#   ansible-playbook -i inventory/hosts --limit builder cluster-kernel-build.yml
+## TMPFS-PURGED #   ansible-playbook -i inventory/hosts --limit builder cluster-kernel-build.yml
 #
 # Validation-only mode:
-#   ansible-playbook cluster-kernel-build.yml --tags validate
+## TMPFS-PURGED #   ansible-playbook cluster-kernel-build.yml --tags validate
 #
 # Notes:
 #   - This playbook assumes a cross-compiler named arm-linux-gnueabihf-gcc.
@@ -212,7 +212,7 @@
 
     - name: Create artifact directory
       file:
-        path: /home/builder/kernel-build-artifacts
+## TMPFS-PURGED         path: /home/builder/kernel-build-artifacts
         state: directory
         mode: '0755'
 
@@ -222,8 +222,8 @@
         dest: "{{ item.dest }}"
         remote_src: true
       loop:
-        - { src: "{{ kernel_src }}/arch/arm/boot/Image", dest: "/home/builder/kernel-build-artifacts/Image" }
-        - { src: "{{ kernel_src }}/arch/arm/boot/dts",   dest: "/home/builder/kernel-build-artifacts/dts" }
+## TMPFS-PURGED         - { src: "{{ kernel_src }}/arch/arm/boot/Image", dest: "/home/builder/kernel-build-artifacts/Image" }
+## TMPFS-PURGED         - { src: "{{ kernel_src }}/arch/arm/boot/dts",   dest: "/home/builder/kernel-build-artifacts/dts" }
       ignore_errors: true
 
     - name: Build summary
@@ -232,4 +232,4 @@
           Kernel build completed successfully.
           distcc enforced for all compiler invocations (CC, CXX, HOSTCC, HOSTCXX).
           Cross-compiler {{ cross_compile_triple }}-gcc routed through distcc.
-          Artifacts stored in /home/builder/kernel-build-artifacts
+## TMPFS-PURGED           Artifacts stored in /home/builder/kernel-build-artifacts

@@ -45,6 +45,7 @@
     - name: Shutdown each node in order
       vars:
         target: "{{ item }}"
+      with_items: "{{ shutdown_order }}"
       block:
 
         - name: Check if {{ target }} is reachable
@@ -76,4 +77,3 @@
           ansible.builtin.debug:
             msg: "{{ target }} is now offline."
 
-      loop: "{{ shutdown_order }}"

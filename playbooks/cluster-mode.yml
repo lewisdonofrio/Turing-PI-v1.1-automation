@@ -1,8 +1,8 @@
 # /opt/ansible-k3s-cluster/playbooks/cluster-mode.yml
 # Purpose: Enter CLUSTER MODE for normal k3s operation.
-# Behavior: Stops distccd, disables tmpfs mount, restores k3s services,
-# removes builder environment, validates k3s health.
-# Notes: ASCII-only, idempotent, 2AM-safe.
+# Behavior: Stops distccd everywhere, removes builder environment overrides,
+#           restores k3s services, validates cluster health, enforces ondemand governor.
+# Doctrine: tmpfs is no longer used anywhere in the system.
 
 # ---------------------------------------------------------------
 # 1. Stop distccd everywhere
@@ -26,30 +26,21 @@
       failed_when: false
 
 # ---------------------------------------------------------------
-# 2. Disable tmpfs mount (builder only)
+# 2. Enforce ondemand CPU governor (cluster mode)
 # ---------------------------------------------------------------
 
-- name: Disable tmpfs mount for kernel builds
-  hosts: builder
+- name: Set CPU governor to ondemand on all nodes
+  hosts: all
   become: true
   gather_facts: false
   tasks:
-    - name: Stop tmpfs mount unit
-      ansible.builtin.systemd:
-        name: tmp-kernelbuild.mount
-        state: stopped
-      failed_when: false
-
-    - name: Disable tmpfs mount unit
-      ansible.builtin.systemd:
-        name: tmp-kernelbuild.mount
-        enabled: no
-      failed_when: false
-
-    - name: Verify tmpfs is unmounted
-      ansible.builtin.command: mountpoint -q /tmp/kernelbuild
-      register: tmpfs_check
-      failed_when: tmpfs_check.rc == 0
+    - name: Apply ondemand governor to all CPUs
+      ansible.builtin.shell: |
+        for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+          echo ondemand > "$gov" 2>/dev/null || true
+        done
+      args:
+        executable: /bin/bash
       changed_when: false
 
 # ---------------------------------------------------------------
@@ -104,7 +95,7 @@
   gather_facts: false
   tasks:
     - name: Check k3s node list
-      ansible.builtin.command: k3s kubectl get nodes
+      ansible.builtin.command: kubectl get nodes
       register: k3s_nodes
       failed_when: false
       changed_when: false
@@ -128,7 +119,7 @@
           k3s-server running on builder
           k3s-agent running on workers
           distccd stopped everywhere
-          tmpfs unmounted and disabled
+          ondemand CPU governor applied
           builder environment removed
           k3s cluster validated
           Ready for normal workloads

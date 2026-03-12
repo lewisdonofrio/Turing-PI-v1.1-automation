@@ -1,0 +1,39 @@
+---
+# 06-start-agent.yml
+# Reload systemd, enable agent, start agent, verify agent is running
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: true
+
+- name: Enable k3s-agent service
+  systemd:
+    name: k3s-agent
+    enabled: true
+
+- name: Start k3s-agent service
+  systemd:
+    name: k3s-agent
+    state: started
+
+- name: Verify k3s-agent is active
+  shell: systemctl is-active k3s-agent
+  register: agent_active
+  failed_when: agent_active.stdout.strip() != "active"
+
+- name: Check k3s-agent journal for early failures
+  shell: |
+    journalctl -u k3s-agent -n 50 --no-pager | grep -Ei "fail|error|panic" || true
+  register: agent_journal
+
+- name: Fail if agent journal shows errors
+  assert:
+    that:
+      - agent_journal.stdout == ""
+    fail_msg: "k3s-agent started but journal shows errors:\n{{ agent_journal.stdout }}"
+
+- name: Wait for k3s-agent to create state directory
+  wait_for:
+    path: /var/lib/rancher/k3s/agent
+    state: present
+    timeout: 60

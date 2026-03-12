@@ -1,0 +1,8 @@
+---
+- name: Run only CNI readiness assertions
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - import_tasks: tasks/07-assert-cni.yml

@@ -1,0 +1,159 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/cluster-bootstrap.yml
+# Purpose: Install and validate the core components required for a healthy k3s cluster.
+# Components:
+#   - Metrics Server
+#   - Local Path Provisioner (default k3s storage)
+#   - Traefik Ingress (k3s default)
+#   - CoreDNS health check
+#   - Node labels for future scheduling
+# Doctrine:
+#   - Lightweight components only (CM3+ constraints)
+#   - No tmpfs anywhere
+#   - No heavy operators yet
+
+###############################################################################
+# 1. Validate k3s is running before bootstrap
+###############################################################################
+
+- name: Validate k3s is active on builder
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check k3s service state
+      ansible.builtin.command: systemctl is-active k3s
+      register: k3s_state
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if k3s is not active
+      ansible.builtin.fail:
+        msg: "k3s is not active on builder"
+      when: k3s_state.stdout.strip() != "active"
+
+###############################################################################
+# 2. Install Metrics Server
+###############################################################################
+
+- name: Install Metrics Server
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply metrics-server manifest
+      ansible.builtin.command: >
+        kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+      changed_when: false
+
+    - name: Wait for metrics-server to become ready
+      ansible.builtin.command: kubectl -n kube-system get deploy metrics-server -o jsonpath='{.status.readyReplicas}'
+      register: metrics_ready
+      retries: 20
+      delay: 6
+      until: metrics_ready.stdout == "1"
+      changed_when: false
+
+###############################################################################
+# 3. Validate Local Path Provisioner (default k3s storage)
+###############################################################################
+
+- name: Validate local-path-provisioner
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check storage class
+      ansible.builtin.command: kubectl get storageclass
+      register: sc_output
+      changed_when: false
+
+    - name: Display storage class
+      ansible.builtin.debug:
+        msg: "{{ sc_output.stdout }}"
+
+###############################################################################
+# 4. Validate Traefik Ingress (k3s default)
+###############################################################################
+
+- name: Validate Traefik ingress controller
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check Traefik deployment
+      ansible.builtin.command: kubectl -n kube-system get deploy traefik -o jsonpath='{.status.readyReplicas}'
+      register: traefik_ready
+      retries: 20
+      delay: 6
+      until: traefik_ready.stdout == "1"
+      changed_when: false
+
+###############################################################################
+# 5. Validate CoreDNS
+###############################################################################
+
+- name: Validate CoreDNS
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check CoreDNS deployment
+      ansible.builtin.command: kubectl -n kube-system get deploy coredns -o jsonpath='{.status.readyReplicas}'
+      register: coredns_ready
+      retries: 20
+      delay: 6
+      until: coredns_ready.stdout == "1"
+      changed_when: false
+
+###############################################################################
+# 6. Apply node labels for future scheduling
+###############################################################################
+
+- name: Apply node labels
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Label builder node
+      ansible.builtin.command: >
+        kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/builder=true --overwrite
+      changed_when: false
+
+- name: Label worker nodes
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Label worker node
+      ansible.builtin.command: >
+        kubectl label node {{ inventory_hostname }} node-role.kubernetes.io/worker=true --overwrite
+      changed_when: false
+
+###############################################################################
+# 7. Final bootstrap banner
+###############################################################################
+
+- name: Report cluster bootstrap complete
+  hosts: builder
+  gather_facts: false
+
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CLUSTER BOOTSTRAP COMPLETE
+          - Metrics Server installed
+          - Local Path Provisioner validated
+          - Traefik ingress ready
+          - CoreDNS healthy
+          - Node labels applied
+          Cluster is ready for DevOps layer deployment
+          ============================================================

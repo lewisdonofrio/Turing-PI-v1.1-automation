@@ -1,6 +1,6 @@
-# /opt/ansible-k3s-cluster/playbooks/kernel-preflight.yml 
-# Validate builder kernel build environment.
-# Ensures workspace, toolchain, config, and distcc readiness.
+---
+# /opt/ansible-k3s-cluster/playbooks/kernel-preflight.yml
+# Doctrine-aligned kernel build preflight for builder node.
 
 - name: Kernel build preflight validation
   hosts: builder
@@ -8,13 +8,28 @@
   gather_facts: false
 
   vars:
-    workspace: "/opt/builder/workspace/linux"
-    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
-
-  environment:
-    PATH: "{{ kernel_safe_path }}"
+    workspace: "/home/builder/src/kernel"
+    staging_dir: "/home/builder/kernel-out"
+    logs_dir: "/home/builder/build-logs"
+    artifacts_dir: "/home/builder/artifacts/kernel"
+    required_scripts:
+## TMPFS-PURGED       - "/home/builder/scripts/kernel-build-preflight.sh"
+## TMPFS-PURGED       - "/home/builder/scripts/kernel-build.sh"
+      - "/home/builder/scripts/kernel-artifact-organizer.sh"
+      - "/home/builder/scripts/kernel-backup-worker7.sh"
+      - "/home/builder/scripts/kernel-install-worker7.sh"
 
   tasks:
+
+    - name: Validate builder hostname
+      ansible.builtin.command: hostname
+      register: hn
+      changed_when: false
+
+    - name: Fail if not kubenode1
+      ansible.builtin.fail:
+        msg: "Kernel builds must run on kubenode1"
+      when: hn.stdout != "kubenode1"
 
     - name: Check kernel workspace exists
       ansible.builtin.stat:
@@ -36,6 +51,21 @@
         msg: ".config missing in kernel workspace"
       when: not config_stat.stat.exists
 
+    - name: Check staging directory exists
+      ansible.builtin.file:
+        path: "{{ staging_dir }}"
+        state: directory
+
+    - name: Check logs directory exists
+      ansible.builtin.file:
+        path: "{{ logs_dir }}"
+        state: directory
+
+    - name: Check artifacts directory exists
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+
     - name: Check gcc exists
       ansible.builtin.stat:
         path: /usr/bin/gcc
@@ -56,13 +86,33 @@
         msg: "distcc missing on builder"
       when: not distcc_stat.stat.exists
 
+    - name: Check pump exists
+      ansible.builtin.stat:
+        path: /usr/lib/distcc/pump
+      register: pump_stat
+
+    - name: Fail if pump missing
+      ansible.builtin.fail:
+        msg: "pump-mode not available"
+      when: not pump_stat.stat.exists
+
     - name: Check DISTCC_HOSTS
       ansible.builtin.shell: "echo $DISTCC_HOSTS"
       register: hosts_env
       changed_when: false
 
-    - name: Report DISTCC_HOSTS
-      ansible.builtin.debug:
-        msg: "DISTCC_HOSTS={{ hosts_env.stdout }}"
+    - name: Fail if DISTCC_HOSTS empty
+      ansible.builtin.fail:
+        msg: "DISTCC_HOSTS is not set"
+      when: hosts_env.stdout == ""
 
+    - name: Check required scripts exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ required_scripts }}"
+      register: script_stats
 
+    - name: Fail if any required script missing
+      ansible.builtin.fail:
+        msg: "Missing required script(s)"
+      when: script_stats.results | selectattr('stat.exists', 'equalto', false) | list | length > 0

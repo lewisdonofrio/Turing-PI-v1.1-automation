@@ -1,9 +1,9 @@
 # =============================================================================
 # File: /opt/ansible-k3s-cluster/roles/kernel_build/tasks/main.yml
 # =============================================================================
-- name: Ensure tmpfs mountpoint exists on all nodes
+## TMPFS-PURGED - name: Ensure tmpfs mountpoint exists on all nodes
   file:
-    path: "{{ kernel_tmpfs_root }}"
+## TMPFS-PURGED     path: "{{ kernel_tmpfs_root }}"
     state: directory
     owner: builder
     group: builder
@@ -11,20 +11,20 @@
   become: true
   tags: [builder_mode]
 
-- name: Mount tmpfs for kernel build on all nodes (builder mode)
+## TMPFS-PURGED - name: Mount tmpfs for kernel build on all nodes (builder mode)
   mount:
-    path: "{{ kernel_tmpfs_root }}"
-    src: "tmpfs"
-    fstype: "tmpfs"
-    opts: "size={{ tmpfs_size }}"
+## TMPFS-PURGED     path: "{{ kernel_tmpfs_root }}"
+## TMPFS-PURGED     src: "tmpfs"
+## TMPFS-PURGED     fstype: "tmpfs"
+## TMPFS-PURGED     opts: "size={{ tmpfs_size }}"
     state: mounted
   become: true
   tags: [builder_mode]
 
-- name: Sync kernel repo from kubenode1 into tmpfs on each node
+## TMPFS-PURGED - name: Sync kernel repo from kubenode1 into tmpfs on each node
   synchronize:
     src: "{{ kernel_repo_root }}/"
-    dest: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/"
+## TMPFS-PURGED     dest: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/"
     delete: yes
     rsync_opts:
       - "--exclude=.git"
@@ -32,9 +32,9 @@
   become: true
   tags: [builder_mode]
 
-- name: Fix ownership in tmpfs on each node
+## TMPFS-PURGED - name: Fix ownership in tmpfs on each node
   file:
-    path: "{{ kernel_tmpfs_root }}/linux-rpi-k3s"
+## TMPFS-PURGED     path: "{{ kernel_tmpfs_root }}/linux-rpi-k3s"
     state: directory
     recurse: yes
     owner: builder
@@ -45,7 +45,7 @@
 - name: Install build-specific makepkg.conf on each node
   template:
     src: makepkg.conf.j2
-    dest: "{{ kernel_tmpfs_root }}/makepkg.conf"
+## TMPFS-PURGED     dest: "{{ kernel_tmpfs_root }}/makepkg.conf"
     owner: builder
     group: builder
     mode: "0644"
@@ -57,14 +57,14 @@
   become_user: builder
   command: >
     makepkg -o
-    --config {{ kernel_tmpfs_root }}/makepkg.conf
+## TMPFS-PURGED     --config {{ kernel_tmpfs_root }}/makepkg.conf
   args:
-    chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+## TMPFS-PURGED     chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
   tags: [builder_mode]
 
 - name: Find extracted kernel source directory on each node
   find:
-    paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}/src"
+## TMPFS-PURGED     paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}/src"
     file_type: directory
     patterns: "linux-*"
   register: kernel_src_dirs
@@ -109,15 +109,15 @@
   become_user: builder
   command: >
     makepkg -s --nocheck
-    --config {{ kernel_tmpfs_root }}/makepkg.conf
+## TMPFS-PURGED     --config {{ kernel_tmpfs_root }}/makepkg.conf
   args:
-    chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+## TMPFS-PURGED     chdir: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
   when: inventory_hostname == "kubenode1"
   tags: [builder_mode]
 
-- name: Unmount tmpfs on all nodes in k3s mode or verify
+## TMPFS-PURGED - name: Unmount tmpfs on all nodes in k3s mode or verify
   mount:
-    path: "{{ kernel_tmpfs_root }}"
+## TMPFS-PURGED     path: "{{ kernel_tmpfs_root }}"
     state: unmounted
   become: true
   tags: [k3s_mode, verify_builder]

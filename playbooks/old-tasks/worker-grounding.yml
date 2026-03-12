@@ -1,0 +1,168 @@
+---
+# =====================================================================
+# worker-grounding.yml (Unified Doctrine, ARMv7-safe)
+# PURPOSE:
+#   Prepare a worker node for deterministic k3s-agent bootstrap.
+#
+# DOCTRINE:
+#   - All workers must be grounded BEFORE k3s-agent install.
+#   - OS-level prep and k3s prerequisites live in ONE file.
+#   - No node joins without:
+#       * correct hostname
+#       * passwordless sudo
+#       * cgroups enabled
+#       * sysctl + br_netfilter
+#       * containerd present
+#       * kube-proxy hostPath ready
+#   - Grounding is idempotent, explicit, and 2AM-safe.
+# =====================================================================
+
+- name: Ground worker node
+  hosts: workers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    kube_proxy_kubeconfig_source: "/var/lib/kube-proxy/kubeconfig"
+    kube_proxy_kubeconfig_dest:   "/var/lib/kube-proxy/kubeconfig"
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 0. Ensure passwordless sudo for Ansible
+    # ------------------------------------------------------------
+    - name: Ensure ansible user has passwordless sudo
+      copy:
+        dest: /etc/sudoers.d/99-ansible
+        owner: root
+        group: root
+        mode: "0440"
+        content: |
+          ansible ALL=(ALL) NOPASSWD:ALL
+
+    # ------------------------------------------------------------
+    # 1. Hostname alignment
+    # ------------------------------------------------------------
+    - name: Ensure hostname matches inventory
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    # ------------------------------------------------------------
+    # 2. Required OS packages (ARMv7-safe, conflict-free)
+    #   NOTE:
+    #     - ebtables is intentionally omitted: on this ArchLinuxARM
+    #       graph it pulls in iptables-nft and causes conflicts.
+    # ------------------------------------------------------------
+    - name: Ensure required packages are present (ARMv7-safe)
+      package:
+        name:
+          - iproute2
+          - iptables-nft
+          - nftables
+          - socat
+          - conntrack-tools
+        state: present
+
+    # ------------------------------------------------------------
+    # 3. Cgroup enablement (auto-detect boot layout)
+    # ------------------------------------------------------------
+
+    - name: Detect cmdline.txt path
+      stat:
+        path: "{{ item }}"
+      loop:
+        - /boot/firmware/cmdline.txt
+        - /boot/cmdline.txt
+      register: cmdline_candidates
+
+    - name: Set cmdline_path fact
+      set_fact:
+        cmdline_path: "{{ item.stat.path }}"
+      when: item.stat.exists
+      loop: "{{ cmdline_candidates.results }}"
+
+    - name: Fail if no cmdline.txt found
+      fail:
+        msg: "No cmdline.txt found in /boot or /boot/firmware"
+      when: cmdline_path is not defined
+
+    - name: Ensure cgroup settings are aligned for k3s
+      lineinfile:
+        path: "{{ cmdline_path }}"
+        backrefs: yes
+        regexp: '^(.*)$'
+        line: '\1 cgroup_enable=cpuset cgroup_enable=memory cgroup_memory=1'
+      notify: Reboot if kernel cmdline changed
+
+    # ------------------------------------------------------------
+    # 4. Sysctl + br_netfilter
+    # ------------------------------------------------------------
+    - name: Ensure Kubernetes sysctl settings
+      copy:
+        dest: /etc/sysctl.d/99-kubernetes.conf
+        content: |
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward = 1
+      notify: Reload sysctl
+
+    - name: Ensure br_netfilter is loaded
+      modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Persist br_netfilter module
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          br_netfilter
+
+    # ------------------------------------------------------------
+    # 5. Ensure containerd exists (stabilizes image unpack)
+    # ------------------------------------------------------------
+    - name: Install containerd
+      package:
+        name: containerd
+        state: present
+
+    - name: Ensure containerd is running
+      service:
+        name: containerd
+        state: started
+        enabled: yes
+
+    # ------------------------------------------------------------
+    # 6. Ensure kube-proxy hostPath exists
+    # ------------------------------------------------------------
+    - name: Ensure /var/lib/kube-proxy directory exists
+      file:
+        path: /var/lib/kube-proxy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy kube-proxy kubeconfig from control plane
+      copy:
+        src: "{{ kube_proxy_kubeconfig_source }}"
+        dest: "{{ kube_proxy_kubeconfig_dest }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    # ------------------------------------------------------------
+    # 7. Ensure time sync
+    # ------------------------------------------------------------
+    - name: Ensure time sync service is enabled
+      service:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+      when: ansible_facts['os_family'] == 'Archlinux'
+
+  handlers:
+    - name: Reboot if kernel cmdline changed
+      reboot:
+
+    - name: Reload sysctl
+      command: sysctl --system

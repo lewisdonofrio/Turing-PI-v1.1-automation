@@ -1,0 +1,25 @@
+---
+- hosts: workers
+  become: true
+  tasks:
+
+    - name: Copy custom kube-proxy image to worker
+      copy:
+        src: "/opt/kube-proxy-v1.34-armv7-glibc.tar"
+        dest: "/tmp/kube-proxy-v1.34-armv7-glibc.tar"
+        mode: "0644"
+
+    - name: Import custom kube-proxy image into containerd
+      command: ctr -n k8s.io images import /tmp/kube-proxy-v1.34-armv7-glibc.tar
+      register: import_result
+      changed_when: "'unpacking' in import_result.stdout or 'loaded' in import_result.stdout"
+
+    - name: Verify kube-proxy image is present in containerd
+      command: ctr -n k8s.io images ls
+      register: ctr_images
+
+    - name: Assert kube-proxy image is loaded
+      assert:
+        that:
+          - "'kube-proxy' in ctr_images.stdout"
+        fail_msg: "Custom kube-proxy image was not loaded into containerd."

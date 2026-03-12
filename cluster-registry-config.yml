@@ -1,0 +1,66 @@
+---
+# cluster-registry-config.yml
+# Purpose: Configure k3s nodes to trust the local registry at 192.168.29.212:5000
+# Doctrine: idempotent, ASCII-only, deterministic, 2AM-safe
+
+- name: Configure k3s registry mirrors
+  hosts: k3s_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    registry_ip: "192.168.29.212:5000"
+    registries_file: "/etc/rancher/k3s/registries.yaml"
+
+  tasks:
+
+    - name: Ensure /etc/rancher/k3s directory exists
+      file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install registry mirror configuration
+      copy:
+        dest: "{{ registries_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          mirrors:
+            "{{ registry_ip }}":
+              endpoint:
+                - "http://{{ registry_ip }}"
+      notify:
+        - restart k3s
+        - restart k3s-agent
+
+    - name: Validate registries.yaml exists
+      stat:
+        path: "{{ registries_file }}"
+      register: regfile
+
+    - name: Fail if registries.yaml missing
+      fail:
+        msg: "registries.yaml missing after copy step"
+      when: not regfile.stat.exists
+
+    - name: Display confirmation
+      debug:
+        msg: "Registry mirror configured for {{ registry_ip }} on {{ inventory_hostname }}"
+
+  handlers:
+
+    - name: restart k3s
+      service:
+        name: k3s
+        state: restarted
+      when: "'server' in group_names"
+
+    - name: restart k3s-agent
+      service:
+        name: k3s-agent
+        state: restarted
+      when: "'agents' in group_names"

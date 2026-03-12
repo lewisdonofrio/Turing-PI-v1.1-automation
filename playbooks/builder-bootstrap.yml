@@ -1,0 +1,227 @@
+# /opt/ansible-k3s-cluster/playbooks/builder-bootstrap.yml
+# Purpose: Bootstrap the builder node for distcc coordination and kernel builds.
+# Behavior: Enforces UID/GID, configures pump-mode (shim-based), installs distcc,
+#           sets up override.conf, creates symlinks, validates toolchain,
+#           prepares build directories, and verifies connectivity to workers.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine: tmpfs is no longer used anywhere in the system.
+
+---
+
+# =============================================================================
+# Builder bootstrap
+# =============================================================================
+- name: Bootstrap builder node
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    ansible_uid: 1001
+    ansible_gid: 1001
+    builder_uid: 1002
+    builder_gid: 1002
+    distcc_bin_dir: "/usr/lib/distcc"
+    override_dir: "/etc/systemd/system/distccd.service.d"
+    override_file: "/etc/systemd/system/distccd.service.d/override.conf"
+    build_root: "/home/builder/src"
+    pumpctl_path: "/home/builder/scripts/pumpctl"
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # UID/GID enforcement
+    # -------------------------------------------------------------------------
+    - name: Enforce ansible UID/GID
+      ansible.builtin.user:
+        name: ansible
+        uid: "{{ ansible_uid }}"
+        group: ansible
+        state: present
+
+    - name: Enforce builder UID/GID
+      ansible.builtin.user:
+        name: builder
+        uid: "{{ builder_uid }}"
+        group: builder
+        state: present
+
+    - name: Fix home directory ownership
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ item | basename }}"
+        group: "{{ item | basename }}"
+        recurse: yes
+      loop:
+        - /home/ansible
+        - /home/builder
+
+    # -------------------------------------------------------------------------
+    # distcc installation + configuration
+    # -------------------------------------------------------------------------
+    - name: Ensure distcc is installed
+      ansible.builtin.package:
+        name: distcc
+        state: present
+
+    - name: Ensure override directory exists
+      ansible.builtin.file:
+        path: "{{ override_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Install override.conf for distccd
+      ansible.builtin.copy:
+        dest: "{{ override_file }}"
+        mode: '0644'
+        content: |
+          [Service]
+          Environment="PATH=/usr/lib/distcc:/usr/bin:/bin"
+          Environment="DISTCC_ARGS=--daemon --allow 192.168.0.0/16 --log-level info"
+      notify: Restart distccd
+
+    # -------------------------------------------------------------------------
+    # distcc symlink directory
+    # -------------------------------------------------------------------------
+    - name: Ensure distcc symlink directory exists
+      ansible.builtin.file:
+        path: "{{ distcc_bin_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create distcc symlinks
+      ansible.builtin.file:
+        src: /usr/bin/distcc
+        dest: "{{ distcc_bin_dir }}/{{ item }}"
+        state: link
+      loop:
+        - gcc
+        - g++
+        - cc
+        - c++
+        - armv7l-unknown-linux-gnueabihf-gcc
+        - armv7l-unknown-linux-gnueabihf-g++
+      notify: Restart distccd
+
+    # -------------------------------------------------------------------------
+    # Pump-mode (shim-based) validation
+    # -------------------------------------------------------------------------
+    - name: Validate pumpctl presence
+      ansible.builtin.stat:
+        path: "{{ pumpctl_path }}"
+      register: pumpctl_stat
+
+    - name: Report pumpctl presence
+      ansible.builtin.debug:
+        msg: "pumpctl present: {{ pumpctl_stat.stat.exists }}"
+
+    - name: Validate pump-mode health (shim-based)
+      ansible.builtin.shell: "{{ pumpctl_path }} health"
+      register: pump_health
+      changed_when: false
+      failed_when: pump_health.rc != 0
+
+    - name: Report pump-mode health
+      ansible.builtin.debug:
+        msg: "pumpctl health: OK"
+
+    # -------------------------------------------------------------------------
+    # Build directory preparation
+    # -------------------------------------------------------------------------
+    - name: Ensure build root exists
+      ansible.builtin.file:
+        path: "{{ build_root }}"
+        state: directory
+        owner: builder
+        group: builder
+        mode: '0755'
+
+    # -------------------------------------------------------------------------
+    # Toolchain + PATH validation
+    # -------------------------------------------------------------------------
+    - name: Check PATH
+      ansible.builtin.shell: echo $PATH
+      register: path_out
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "PATH: {{ path_out.stdout }}"
+
+    - name: Check gcc version
+      ansible.builtin.shell: gcc --version | head -n 1
+      register: gcc_version
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "gcc version: {{ gcc_version.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # Network checks
+    # -------------------------------------------------------------------------
+    - name: Show MTU for all interfaces
+      ansible.builtin.shell: ip link | grep mtu
+      register: mtu_out
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "MTU: {{ mtu_out.stdout }}"
+
+    - name: Check hostname and FQDN
+      ansible.builtin.shell: hostname -f
+      register: fqdn_out
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "FQDN: {{ fqdn_out.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # distccd service state
+    # -------------------------------------------------------------------------
+    - name: Ensure distccd is enabled and running
+      ansible.builtin.service:
+        name: distccd
+        state: started
+        enabled: true
+
+    - name: Report distccd state
+      ansible.builtin.command: systemctl is-active distccd
+      register: distccd_state
+      failed_when: false
+      changed_when: false
+
+    - ansible.builtin.debug:
+        msg: "distccd active: {{ distccd_state.stdout }}"
+
+# =============================================================================
+# Handlers
+# =============================================================================
+handlers:
+  - name: Restart distccd
+    ansible.builtin.service:
+      name: distccd
+      state: restarted
+
+# =============================================================================
+# Final summary banner
+# =============================================================================
+- name: Builder bootstrap summary
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          BUILDER BOOTSTRAP COMPLETE
+          - UID/GID enforced for ansible + builder
+          - home directory ownership corrected
+          - distcc installed and configured
+          - override.conf applied
+          - symlinks created in /usr/lib/distcc
+          - pump-mode validated (shim-based)
+          - PATH + gcc validated
+          - MTU + FQDN checked
+          - build root prepared
+          - distccd running and enabled
+          - tmpfs logic removed (doctrine-compliant)
+          ============================================================

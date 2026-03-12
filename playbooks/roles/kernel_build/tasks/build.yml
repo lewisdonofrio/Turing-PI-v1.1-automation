@@ -1,0 +1,73 @@
+# roles/kernel_build/tasks/build.yml
+# Purpose: Build the kernel using distcc acceleration and deterministic flags.
+# Behavior: Executes make with explicit environment, captures output, and
+#           reports results. Pump-mode is shim-based and optional.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - pump-mode is shim-based.
+#   - distcc must be used deterministically.
+#   - no tmpfs anywhere in the system.
+#   - build must fail loudly and clearly.
+
+---
+
+# =============================================================================
+# 1. Validate pump-mode (shim-based)
+# =============================================================================
+- name: Validate pumpctl health (shim-based)
+  ansible.builtin.shell: /home/builder/scripts/pumpctl health
+  register: pump_health
+  changed_when: false
+  failed_when: pump_health.rc != 0
+
+- name: Report pump-mode health
+  ansible.builtin.debug:
+    msg: "pumpctl health: OK"
+
+# =============================================================================
+# 2. Validate distccd state
+# =============================================================================
+- name: Validate distccd is active
+  ansible.builtin.command: systemctl is-active distccd
+  register: distccd_state
+  changed_when: false
+  failed_when: distccd_state.stdout != "active"
+
+- name: Report distccd state
+  ansible.builtin.debug:
+    msg: "distccd active: {{ distccd_state.stdout }}"
+
+# =============================================================================
+# 3. Run kernel build (distcc-accelerated)
+# =============================================================================
+- name: Run kernel build (distcc-accelerated)
+  ansible.builtin.shell: |
+    /usr/bin/env \
+      PATH="/usr/lib/distcc:/usr/bin:/bin" \
+      MAKEFLAGS="-j{{ build_jobs }}" \
+      DISTCC_VERBOSE=1 \
+      make -j{{ build_jobs }}
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: build_out
+  changed_when: false
+  failed_when: build_out.rc != 0
+
+- name: Report build output (last 20 lines)
+  ansible.builtin.debug:
+    msg: "{{ build_out.stdout_lines[-20:] | default(['no output']) }}"
+
+# =============================================================================
+# 4. Build stage summary
+# =============================================================================
+- name: Build stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      BUILD STAGE COMPLETE
+      - pump-mode validated (shim-based)
+      - distcc active and used
+      - kernel built with -j{{ build_jobs }}
+      - build output captured
+      ------------------------------------------------------------

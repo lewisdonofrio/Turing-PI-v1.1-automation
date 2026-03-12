@@ -1,0 +1,177 @@
+---
+- name: Install or update k3s workers
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    k3s_url: "https://kubenode1.home.lab:6443"
+    k3s_version: "v1.34.3+k3s3"
+    k3s_bin_dir: /usr/local/bin
+    k3s_agent_env: /etc/systemd/system/k3s-agent.service.env
+    k3s_agent_service: /etc/systemd/system/k3s-agent.service
+    k3s_token: "K108aa1cca1938c228cd282ca6ec453359610f6ebb1af59bf2cb02026e10c5c228b::server:a2d4be8caf31854c5d8ecb375ef409d6"
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 0. Optional: FULL IDENTITY WIPE (force_rejoin=true)
+    # ------------------------------------------------------------
+    - name: Force wipe old k3s-agent identity and state
+      when: force_rejoin | default(false) | bool
+      block:
+
+        - name: Stop k3s-agent
+          systemd:
+            name: k3s-agent
+            state: stopped
+          ignore_errors: true
+
+        - name: Unmount kubelet projected volumes
+          shell: |
+            for m in $(mount | grep '/var/lib/kubelet' | awk '{print $3}'); do
+              umount -l "$m" || true
+            done
+          args:
+            executable: /bin/bash
+          ignore_errors: true
+
+        - name: Remove rancher node identity
+          file:
+            path: /etc/rancher/node
+            state: absent
+
+        - name: Remove full k3s state
+          file:
+            path: /var/lib/rancher/k3s
+            state: absent
+
+        - name: Remove kubelet state
+          file:
+            path: /var/lib/kubelet
+            state: absent
+
+        - name: Remove legacy CNI dirs
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/cni
+            - /opt/cni
+
+    # ------------------------------------------------------------
+    # 1. Check if memory cgroups are already enabled
+    # ------------------------------------------------------------
+    - name: Check if memory cgroups are enabled
+      command: "grep -q 'cgroup_memory=1' /boot/cmdline.txt"
+      register: cgroup_check
+      ignore_errors: true
+
+    # ------------------------------------------------------------
+    # 2. Patch /boot/firmware/cmdline.txt if needed
+    # ------------------------------------------------------------
+    - name: Enable memory cgroups in cmdline.txt
+      lineinfile:
+        path: /boot/firmware/cmdline.txt
+        backrefs: yes
+        regexp: '^(.*)$'
+        line: '\1 cgroup_memory=1 cgroup_enable=memory'
+      when: cgroup_check.rc != 0
+
+    # ------------------------------------------------------------
+    # 3. Reboot only if we changed the file
+    # ------------------------------------------------------------
+    - name: Reboot worker to apply cgroup settings
+      reboot:
+        msg: "Rebooting to enable memory cgroups"
+        connect_timeout: 5
+        reboot_timeout: 300
+      when: cgroup_check.rc != 0
+
+    # ------------------------------------------------------------
+    # 4. Download ARMv7 binary directly (NO installer)
+    # ------------------------------------------------------------
+    - name: Download ARMv7 k3s-agent binary
+      get_url:
+        url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s-armhf"
+        dest: "{{ k3s_bin_dir }}/k3s-agent"
+        mode: "0755"
+        force: true
+
+    # ------------------------------------------------------------
+    # 5. Rename downloaded binary to canonical name
+    # ------------------------------------------------------------
+    - name: Install k3s binary (rename downloaded ARMHF binary)
+      command: mv {{ k3s_bin_dir }}/k3s-agent {{ k3s_bin_dir }}/k3s
+      args:
+        removes: "{{ k3s_bin_dir }}/k3s-agent"
+
+    - name: Ensure k3s binary permissions
+      file:
+        path: "{{ k3s_bin_dir }}/k3s"
+        owner: root
+        group: root
+        mode: "0755"
+
+    # ------------------------------------------------------------
+    # 6. Write env file with correct token + URL
+    # ------------------------------------------------------------
+    - name: Write k3s-agent env
+      copy:
+        dest: "{{ k3s_agent_env }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          K3S_URL="{{ k3s_url }}"
+          K3S_TOKEN="{{ k3s_token }}"
+      notify: restart k3s-agent
+
+    # ------------------------------------------------------------
+    # 7. Create systemd unit for k3s-agent
+    # ------------------------------------------------------------
+    - name: Install k3s-agent systemd service
+      copy:
+        dest: "{{ k3s_agent_service }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Lightweight Kubernetes Agent
+          After=network-online.target
+
+          [Service]
+          Type=simple
+          EnvironmentFile={{ k3s_agent_env }}
+          ExecStart={{ k3s_bin_dir }}/k3s agent
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Enable and restart k3s-agent
+      systemd:
+        name: k3s-agent
+        state: restarted
+        enabled: true
+
+  handlers:
+    - name: restart k3s-agent
+      systemd:
+        name: k3s-agent
+        state: restarted
+        enabled: true
+  
+    - name: Assert embedded CNI plugins exist
+      stat:
+        path: "/var/lib/rancher/k3s/data"
+      register: k3s_data_dir
+
+    - name: Debug k3s data dir
+      debug:
+        var: k3s_data_dir
+      when: k3s_data_dir.stat.exists

@@ -1,0 +1,141 @@
+---
+- name: Worker Health & Fitness Test
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    master_host: "kubenode1.home.lab"
+    api_port: 6443
+    supervisor_port: 6444
+    cni_dir: "/var/lib/rancher/k3s/data/current/bin"
+    cni_loopback: "/opt/cni/bin/loopback"
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 1. Basic reachability + load + memory
+    # ------------------------------------------------------------
+    - name: Check SSH reachability
+      command: "true"
+
+    - name: Check system load
+      command: "cat /proc/loadavg"
+      register: loadavg
+
+    - name: Check memory pressure
+      command: "cat /proc/meminfo"
+      register: meminfo
+
+    # ------------------------------------------------------------
+    # 2. Agent service + logs
+    # ------------------------------------------------------------
+    - name: Check k3s-agent service state
+      command: "systemctl is-active k3s-agent || true"
+      register: agent_state
+
+    - name: Check recent agent errors
+      command: "journalctl -u k3s-agent -n 50 --no-pager"
+      register: agent_errors
+
+    # ------------------------------------------------------------
+    # 3. API + supervisor reachability
+    # ------------------------------------------------------------
+    - name: Check API server reachability (master:6443)
+      command: "timeout 3 bash -c 'echo > /dev/tcp/{{ master_host }}/{{ api_port }}' || true"
+      register: api_ok
+
+    - name: Check local supervisor port (127.0.0.1:6444)
+      command: "timeout 3 bash -c 'echo > /dev/tcp/127.0.0.1/{{ supervisor_port }}' || true"
+      register: supervisor_ok
+
+    # ------------------------------------------------------------
+    # 4. Containerd + CNI plugin integrity
+    # ------------------------------------------------------------
+    - name: Check containerd socket
+      stat:
+        path: /run/k3s/containerd/containerd.sock
+      register: containerd_sock
+
+    - name: List CNI plugins
+      command: "ls -l /opt/cni/bin"
+      register: cni_list
+
+    - name: Get master CNI checksum
+      delegate_to: "{{ master_host }}"
+      command: "sha256sum /opt/cni/bin/loopback"
+      register: master_cni_checksum
+
+    - name: Get worker CNI checksum
+      command: "sha256sum /opt/cni/bin/loopback"
+      register: worker_cni_checksum
+
+    - name: Compare CNI checksums
+      set_fact:
+        cni_checksum_match: "{{ master_cni_checksum.stdout.split()[0] == worker_cni_checksum.stdout.split()[0] }}"
+
+    - name: Check loopback plugin exists
+      stat:
+        path: "{{ cni_loopback }}"
+      register: loopback_exists
+
+    - name: Check loopback plugin is executable
+      stat:
+        path: "{{ cni_loopback }}"
+      register: loopback_exec
+
+    - name: Check loopback plugin size
+      command: "stat -c %s {{ cni_loopback }}"
+      register: loopback_size
+
+    - name: Check loopback plugin architecture
+      command: "file {{ cni_loopback }}"
+      register: loopback_arch
+
+    - name: Check loopback plugin symlink target
+      command: "readlink -f {{ cni_loopback }}"
+      register: loopback_target
+
+    - name: Test CNI plugin load via containerd
+      command: "{{ cni_dir }}/ctr plugins ls"
+      register: ctr_plugins
+
+    # ------------------------------------------------------------
+    # 5. DNS + node lease
+    # ------------------------------------------------------------
+    - name: Check DNS resolution inside host namespace
+      command: "getent hosts kubernetes.default.svc.cluster.local || true"
+      register: dns_check
+
+    - name: Check node lease freshness
+      delegate_to: "{{ master_host }}"
+      command: "kubectl get lease -n kube-node-lease {{ inventory_hostname }} -o json"
+      register: lease_json
+
+    # ------------------------------------------------------------
+    # 6. Classification
+    # ------------------------------------------------------------
+    - name: Classify worker health
+      set_fact:
+        worker_health:
+          worker: "{{ inventory_hostname }}"
+          agent_state: "{{ agent_state }}"
+          agent_has_errors: "{{ 'error' in agent_errors.stdout or 'fail' in agent_errors.stdout }}"
+          api_ok: "{{ api_ok.rc == 0 }}"
+          supervisor_ok: "{{ supervisor_ok.rc == 0 }}"
+          cni_checksum_match: "{{ cni_checksum_match }}"
+          cni_ok: "{{ loopback_exists.stat.exists and loopback_exec.stat.executable }}"
+          lease_ok: true
+          overall: >-
+            {{ 'healthy'
+               if (agent_state.stdout == 'active'
+                   and api_ok.rc == 0
+                   and supervisor_ok.rc == 0
+                   and cni_checksum_match
+                   and loopback_exists.stat.exists
+                   and loopback_exec.stat.executable)
+               else 'unhealthy' }}
+
+    - name: Summarize worker health
+      debug:
+        var: worker_health

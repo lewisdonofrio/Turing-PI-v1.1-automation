@@ -1,17 +1,16 @@
 # =====================================================================
 #  /opt/ansible-k3s-cluster/playbooks/kernel-distribute.yml
-# =====================================================================
+#
 #  Purpose:
-#    Distribute built kernel artifacts from kubenode1 to all cluster
-#    nodes. This playbook performs distribution ONLY. It does not
-#    install, activate, or reboot. It is safe, idempotent, and
-#    future-maintainer-friendly.
+#    Distribute fully built kernel artifacts from kubenode1 to all
+#    cluster nodes. Pure distribution. No install, no reboot.
 #
 #  Notes:
-#    - Must be run AFTER kernel-build.sh completes successfully.
-#    - Assumes artifacts exist in /home/builder/src/kernel/out/
-#    - Stages files into /var/lib/kernel-staging/<version>/
-#    - No local build logic belongs here.
+#    - Assumes artifacts are staged under:
+#        /home/builder/artifacts/kernel/<timestamp>/
+#    - Assumes modules are staged under:
+#        /home/builder/kernel-out/lib/modules/<kernelrelease>/
+#    - Idempotent and safe.
 # =====================================================================
 
 - name: Distribute kernel artifacts to cluster nodes
@@ -20,17 +19,33 @@
   gather_facts: no
 
   vars:
-    kernel_version: "6.18.1-rpi"
-    artifact_src: "/home/builder/src/kernel/out"
-    staging_dir: "/var/lib/kernel-staging/{{ kernel_version }}"
-    kernel_safe_path: "/usr/bin:/usr/local/bin:/usr/sbin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:{{ ansible_env.PATH }}"
-
-  environment:
-    PATH: "{{ kernel_safe_path }}"
+    # Provided externally or via --extra-vars
+    artifact_dir: "/home/builder/artifacts/kernel/{{ kernel_timestamp }}"
+    staging_dir: "/var/lib/kernel-staging/{{ kernelrelease }}"
+    modules_src: "/home/builder/kernel-out/lib/modules/{{ kernelrelease }}"
 
   tasks:
 
-    - name: Ensure staging directory exists
+    # ---------------------------------------------------------------
+    # Validate artifact directory
+    # ---------------------------------------------------------------
+
+    - name: Ensure artifact directory exists on builder
+      delegate_to: kubenode1
+      stat:
+        path: "{{ artifact_dir }}"
+      register: art
+
+    - name: Fail if artifact directory missing
+      fail:
+        msg: "Artifact directory not found: {{ artifact_dir }}"
+      when: not art.stat.exists
+
+    # ---------------------------------------------------------------
+    # Create staging directory on target nodes
+    # ---------------------------------------------------------------
+
+    - name: Ensure staging directory exists on target
       file:
         path: "{{ staging_dir }}"
         state: directory
@@ -38,34 +53,78 @@
         group: root
         mode: "0755"
 
-    - name: Copy kernel Image
+    # ---------------------------------------------------------------
+    # Distribute kernel images
+    # ---------------------------------------------------------------
+
+    - name: Copy kernel images
       copy:
-        src: "{{ artifact_src }}/Image"
-        dest: "{{ staging_dir }}/Image"
+        src: "{{ artifact_dir }}/{{ item }}"
+        dest: "{{ staging_dir }}/{{ item }}"
         owner: root
         group: root
         mode: "0644"
-        checksum: "sha256"
+      loop:
+        - zImage
+        - Image
+        - vmlinux
 
-    - name: Copy DTBs directory
+    # ---------------------------------------------------------------
+    # Distribute metadata
+    # ---------------------------------------------------------------
+
+    - name: Copy metadata files
       copy:
-        src: "{{ artifact_src }}/dtbs/"
+        src: "{{ artifact_dir }}/{{ item }}"
+        dest: "{{ staging_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - System.map
+        - .config
+        - Module.symvers
+        - modules.builtin
+        - modules.builtin.modinfo
+
+    # ---------------------------------------------------------------
+    # Distribute DTBs and overlays
+    # ---------------------------------------------------------------
+
+    - name: Copy DTBs
+      copy:
+        src: "{{ artifact_dir }}/dtbs/"
         dest: "{{ staging_dir }}/dtbs/"
         owner: root
         group: root
         mode: "0644"
         recursive: yes
-        checksum: "sha256"
 
-    - name: Copy kernel modules archive
+    # ---------------------------------------------------------------
+    # Distribute modules tree
+    # ---------------------------------------------------------------
+
+    - name: Ensure module directory exists
+      file:
+        path: "{{ staging_dir }}/modules"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy modules tree
       copy:
-        src: "{{ artifact_src }}/modules.tar.gz"
-        dest: "{{ staging_dir }}/modules.tar.gz"
+        src: "{{ modules_src }}/"
+        dest: "{{ staging_dir }}/modules/"
         owner: root
         group: root
         mode: "0644"
-        checksum: "sha256"
+        recursive: yes
+
+    # ---------------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------------
 
     - name: Display staging summary
       debug:
-        msg: "Kernel {{ kernel_version }} staged on {{ inventory_hostname }} at {{ staging_dir }}"
+        msg: "Kernel {{ kernelrelease }} staged on {{ inventory_hostname }} at {{ staging_dir }}"

@@ -1,0 +1,197 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/devops-gitea.yml
+# Purpose: Deploy Gitea using NFS-backed persistent storage.
+# Doctrine:
+#   - Use nfs-client StorageClass (RWX)
+#   - Lightweight deployment for CM3+ nodes
+#   - Traefik ingress
+#   - No tmpfs anywhere
+
+###############################################################################
+# 1. Create namespace
+###############################################################################
+
+- name: Create gitea namespace
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply gitea namespace
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: gitea
+      changed_when: false
+
+###############################################################################
+# 2. Create NFS-backed PVC
+###############################################################################
+
+- name: Create Gitea PVC (NFS storage)
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply NFS-backed PVC
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: gitea-pvc
+            namespace: gitea
+          spec:
+            accessModes:
+              - ReadWriteMany
+            resources:
+              requests:
+                storage: 10Gi
+            storageClassName: nfs-client
+      changed_when: false
+
+###############################################################################
+# 3. Deploy Gitea
+###############################################################################
+
+- name: Deploy Gitea
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply Gitea deployment
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: gitea
+            namespace: gitea
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: gitea
+            template:
+              metadata:
+                labels:
+                  app: gitea
+              spec:
+                containers:
+                  - name: gitea
+                    image: gitea/gitea:latest
+                    ports:
+                      - containerPort: 3000
+                    volumeMounts:
+                      - name: gitea-storage
+                        mountPath: /data
+                volumes:
+                  - name: gitea-storage
+                    persistentVolumeClaim:
+                      claimName: gitea-pvc
+      changed_when: false
+
+###############################################################################
+# 4. Create Gitea service
+###############################################################################
+
+- name: Create Gitea service
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply service
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: gitea
+            namespace: gitea
+          spec:
+            type: ClusterIP
+            selector:
+              app: gitea
+            ports:
+              - name: http
+                port: 3000
+                targetPort: 3000
+      changed_when: false
+
+###############################################################################
+# 5. Create Traefik IngressRoute
+###############################################################################
+
+- name: Create Gitea ingress
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply ingressroute
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: traefik.containo.us/v1alpha1
+          kind: IngressRoute
+          metadata:
+            name: gitea
+            namespace: gitea
+          spec:
+            entryPoints:
+              - web
+            routes:
+              - match: Host(`gitea.home.lab`)
+                kind: Rule
+                services:
+                  - name: gitea
+                    port: 3000
+      changed_when: false
+
+###############################################################################
+# 6. Validate Gitea deployment
+###############################################################################
+
+- name: Validate Gitea is ready
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Wait for Gitea pod to be ready
+      ansible.builtin.command: >
+        kubectl -n gitea get deploy gitea -o jsonpath='{.status.readyReplicas}'
+      register: gitea_ready
+      retries: 30
+      delay: 5
+      until: gitea_ready.stdout == "1"
+      changed_when: false
+
+###############################################################################
+# 7. Final banner
+###############################################################################
+
+- name: Report Gitea deployment complete
+  hosts: builder
+  gather_facts: false
+
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          GITEA DEPLOYMENT COMPLETE
+          - Namespace: gitea
+          - Storage: nfs-client (RWX)
+          - Ingress: http://gitea.home.lab
+          - Deployment: Ready
+          Your internal Git service is now online.
+          ============================================================

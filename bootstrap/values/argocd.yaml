@@ -1,0 +1,16 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/argocd.yaml
+# PURPOSE:
+#   Minimal ArgoCD config for GitOps control on k3s.
+#   Exposes ArgoCD server via NodePort.
+# =====================================================================
+
+server:
+  service:
+    type: NodePort
+    nodePort: 30080
+  insecure: true
+
+configs:
+  params:
+    server.insecure: "true"

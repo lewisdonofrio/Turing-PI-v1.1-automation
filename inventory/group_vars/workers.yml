@@ -1,4 +1,2 @@
-# =============================================================================
-# File: /opt/ansible-k3s-cluster/inventory/group_vars/workers.yml
-# =============================================================================
-distcc_allowed_subnet: "{{ distcc_network_cidr }}"
+k3s_token: "K108aa1cca1938c228cd282ca6ec453359610f6ebb1af59bf2cb02026e10c5c228b::server:a2d4be8caf31854c5d8ecb375ef409d6"
+

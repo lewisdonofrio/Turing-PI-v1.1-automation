@@ -1,0 +1,103 @@
+---
+# 04a-ensure-cni.yml
+# Enforce AND repair embedded CNI bundle on workers
+
+- name: Ensure rsync is installed
+  package:
+    name: rsync
+    state: present
+
+# ------------------------------------------------------------
+# 1. Remove any stray or hand-managed CNI directories
+# ------------------------------------------------------------
+- name: Remove any hand-managed CNI directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/cni
+    - /etc/cni
+    - /var/lib/cni
+
+# ------------------------------------------------------------
+# 2. Ensure agent CNI config directory exists
+# ------------------------------------------------------------
+- name: Ensure k3s agent CNI net.d directory exists
+  file:
+    path: /var/lib/rancher/k3s/agent/etc/cni/net.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ------------------------------------------------------------
+# 3. Ensure /opt/cni exists
+# ------------------------------------------------------------
+- name: Ensure /opt/cni exists
+  file:
+    path: /opt/cni
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ------------------------------------------------------------
+# 4. Get master CNI checksum
+# ------------------------------------------------------------
+- name: Get master CNI checksum
+  delegate_to: "{{ groups['master'][0] }}"
+  run_once: true
+  shell: "sha256sum /var/lib/rancher/k3s/data/current/bin/cni | awk '{print $1}'"
+  register: master_cni_checksum
+
+# ------------------------------------------------------------
+# 5. Get worker CNI checksum (if exists)
+# ------------------------------------------------------------
+- name: Get worker CNI checksum
+  shell: "sha256sum /var/lib/rancher/k3s/data/current/bin/cni 2>/dev/null | awk '{print $1}' || echo 'missing'"
+  register: worker_cni_checksum
+
+# ------------------------------------------------------------
+# 6. Determine if worker CNI is valid
+# ------------------------------------------------------------
+- name: Determine if worker CNI matches master
+  set_fact:
+    cni_needs_repair: "{{ worker_cni_checksum.stdout != master_cni_checksum.stdout }}"
+
+- name: Ensure embedded CNI directory exists
+  file:
+    path: /var/lib/rancher/k3s/data/current/bin
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ------------------------------------------------------------
+# 7. Repair CNI bundle if missing or mismatched
+# ------------------------------------------------------------
+- name: Repair embedded CNI bundle from master
+  when: cni_needs_repair
+  block:
+
+    - name: Remove worker embedded CNI bundle
+      file:
+        path: /var/lib/rancher/k3s/data/current/bin
+        state: absent
+
+    - name: Recreate embedded CNI directory
+      file:
+        path: /var/lib/rancher/k3s/data/current/bin
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+# ------------------------------------------------------------
+# 8. Recreate /opt/cni/bin symlink
+# ------------------------------------------------------------
+- name: Symlink /opt/cni/bin to embedded CNI bundle
+  file:
+    src: /var/lib/rancher/k3s/data/current/bin
+    dest: /opt/cni/bin
+    state: link
+    force: true

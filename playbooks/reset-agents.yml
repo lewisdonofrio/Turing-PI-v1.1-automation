@@ -1,0 +1,66 @@
+# 07-reset-agents.yml
+---
+- name: Reset k3s agents and node identity
+  hosts: workers
+  become: true
+  gather_facts: true   # <-- required to get ansible_default_ipv4
+
+  vars:
+    k3s_server_url: "https://kubenode1.home.lab:6443"
+    k3s_token: "REPLACE_WITH_SERVER_TOKEN"
+    flannel_iface: "enu1u1"
+    k3s_resolv_conf: "/etc/resolv.conf"
+
+  tasks:
+    - name: Stop k3s-agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: stopped
+        enabled: false
+
+    - name: Wipe k3s node identity and agent state
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/node
+        - /var/lib/rancher/k3s/agent
+        - /var/lib/rancher/k3s/kubelet.kubeconfig
+        - /var/lib/rancher/k3s/kubeproxy.kubeconfig
+
+    - name: Recreate k3s agent config directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: "0755"
+
+    - name: Write k3s agent.yaml
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/agent.yaml
+        mode: "0644"
+        content: |
+          server: {{ k3s_server_url }}
+          token: {{ k3s_token }}
+          node-ip: {{ ansible_default_ipv4.address }}
+          node-name: {{ inventory_hostname }}
+          resolv-conf: "{{ k3s_resolv_conf }}"
+          flannel-iface: "{{ flannel_iface }}"
+
+    - name: Ensure k3s-agent delay override exists
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+        mode: "0644"
+        content: |
+          [Unit]
+          After=network-online.target
+          Wants=network-online.target
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and start k3s-agent
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: started
+        enabled: true

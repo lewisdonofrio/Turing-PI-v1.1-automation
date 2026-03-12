@@ -1,0 +1,49 @@
+# roles/kernel_build/defaults/main.yml
+# Purpose: Define default variables for the kernel build role.
+# Behavior: Provides sane, explicit defaults for kernel version, tarball URL,
+#           checksum, defconfig, and build parameters.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. All values are safe to override in inventory or playbooks.
+# Doctrine:
+#   - defaults must be explicit and documented.
+#   - no hidden magic.
+#   - no tmpfs anywhere in the system.
+
+---
+
+# =============================================================================
+# Kernel version and source
+# =============================================================================
+kernel_version: "6.6.0"
+kernel_tarball_url: "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-{{ kernel_version }}.tar.xz"
+
+# Optional: SHA256 checksum for the tarball.
+# If provided, fetch.yml will verify it.
+kernel_tarball_checksum: ""
+
+# =============================================================================
+# Kernel configuration
+# =============================================================================
+# Defconfig file stored under roles/kernel_build/files/
+kernel_defconfig: "bcm2709_defconfig"
+
+# =============================================================================
+# Build parameters
+# =============================================================================
+# Number of parallel jobs for make.
+# Distcc will amplify this across workers.
+build_jobs: 16
+
+# =============================================================================
+# Architecture
+# =============================================================================
+kernel_arch: "arm"
+kernel_cross_compile: ""
+
+# =============================================================================
+# Paths
+# =============================================================================
+kernel_build_root: "/home/builder/src/kernel-build"
+kernel_artifacts_dir: "{{ kernel_build_root }}/artifacts"
+kernel_patches_dir: "{{ kernel_build_root }}/patches"
+kernel_source_dir: "{{ kernel_build_root }}/linux"

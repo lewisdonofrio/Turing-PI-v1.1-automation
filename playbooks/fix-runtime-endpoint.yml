@@ -1,0 +1,20 @@
+---
+- hosts: workers
+  become: true
+  tasks:
+
+    - name: Ensure runtime endpoint is present
+      lineinfile:
+        path: /etc/systemd/system/k3s-agent.service.env
+        line: 'K3S_CONTAINER_RUNTIME_ENDPOINT=unix:///run/containerd/containerd.sock'
+        create: no
+        state: present
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Start k3s-agent
+      systemd:
+        name: k3s-agent
+        enabled: yes
+        state: started

@@ -1,0 +1,13 @@
+# roles/kernel_build/handlers/main.yml
+# Purpose: Define handlers for the kernel_build role.
+# Behavior: Currently empty because kernel builds do not require service restarts.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Minimal by design.
+# Doctrine:
+#   - handlers exist only when services must be restarted.
+#   - kernel builds are pure user-space operations.
+#   - no tmpfs anywhere in the system.
+
+---
+
+# No handlers required for this role.

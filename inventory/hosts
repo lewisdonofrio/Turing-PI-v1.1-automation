@@ -1,3 +1,6 @@
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3
+
 [kernel_sandbox]
 kubenode7.home.lab
 
@@ -25,12 +28,12 @@ kubenode7.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansib
 [master]
 kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 [workers]
-kubenode2.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
-kubenode3.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
-kubenode4.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
-kubenode5.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
-kubenode6.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
-kubenode7.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode2.home.lab agent_delay=60 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode3.home.lab agent_delay=120 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode4.home.lab agent_delay=180 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode5.home.lab agent_delay=240 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode6.home.lab agent_delay=300 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
+kubenode7.home.lab agent_delay=360 ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
 
 [builder]
 kubenode1.home.lab ansible_user=ansible ansible_ssh_private_key_file=/home/ansible/.ssh/id_ed25519
@@ -50,3 +53,8 @@ kubenode4.home.lab
 kubenode5.home.lab
 kubenode6.home.lab
 kubenode7.home.lab
+
+[realign_targets]
+kubenode4.home.lab
+kubenode5.home.lab
+kubenode6.home.lab

@@ -7,7 +7,7 @@
 #
 # Behavior:
 #   - Stops k3s-server and k3s-agent
-#   - Mounts tmpfs on builder
+## TMPFS-PURGED #   - Mounts tmpfs on builder
 #   - Resets distccd on workers
 #   - Enforces builder environment
 #   - Validates distcc subsystem
@@ -28,4 +28,4 @@
   gather_facts: false
   tasks:
     - ansible.builtin.debug:
-        msg: "BUILD MODE active: k3s stopped, tmpfs mounted, distccd validated, smoketest passed."
+## TMPFS-PURGED         msg: "BUILD MODE active: k3s stopped, tmpfs mounted, distccd validated, smoketest passed."

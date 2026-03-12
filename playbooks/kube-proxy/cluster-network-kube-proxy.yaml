@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-proxy
+  namespace: kube-system
+  labels:
+    k8s-app: kube-proxy
+spec:
+  selector:
+    matchLabels:
+      k8s-app: kube-proxy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-proxy
+    spec:
+      hostNetwork: true
+      serviceAccountName: kube-proxy
+      containers:
+      - name: kube-proxy
+        image: kube-proxy:v1.34-armv7-glibc
+        imagePullPolicy: Never
+        securityContext:
+          privileged: true
+        command:
+        - /usr/local/bin/kube-proxy
+        - --config=/var/lib/kube-proxy/config.conf
+        volumeMounts:
+        - name: config
+          mountPath: /var/lib/kube-proxy/config.conf
+          subPath: config.conf
+        - name: kubeconfig
+          mountPath: /var/lib/kube-proxy/kubeconfig
+          readOnly: true
+        - name: modules
+          mountPath: /lib/modules
+          readOnly: true
+        - name: xtables
+          mountPath: /run/xtables.lock
+      volumes:
+      - name: config
+        configMap:
+          name: kube-proxy
+          items:
+          - key: config.conf
+            path: config.conf
+      - name: kubeconfig
+        hostPath:
+          path: /var/lib/kube-proxy/kubeconfig
+          type: File
+      - name: modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
+      - name: xtables
+        hostPath:
+          path: /run/xtables.lock
+          type: FileOrCreate

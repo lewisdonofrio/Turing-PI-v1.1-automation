@@ -1,0 +1,103 @@
+# roles/kernel_build/tasks/fetch.yml
+# Purpose: Fetch and extract kernel sources into the persistent build root.
+# Behavior: Downloads kernel tarball, verifies integrity (optional),
+#           extracts sources, and prepares workspace for patch/config/build.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - tmpfs is no longer used anywhere in the system.
+#   - build roots are persistent under /home/builder/src.
+#   - extraction must be deterministic and nano-safe.
+
+---
+
+# =============================================================================
+# 1. Validate build root
+# =============================================================================
+- name: Ensure kernel build root exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+# =============================================================================
+# 2. Fetch kernel tarball
+# =============================================================================
+- name: Download kernel tarball
+  ansible.builtin.get_url:
+    url: "{{ kernel_tarball_url }}"
+    dest: "/home/builder/src/kernel-build/kernel.tar.xz"
+    mode: '0644'
+  register: tarball_fetch
+
+- name: Report kernel tarball fetch
+  ansible.builtin.debug:
+    msg: "Kernel tarball fetched: {{ tarball_fetch.dest }}"
+
+# =============================================================================
+# 3. Optional: Verify checksum
+# =============================================================================
+- name: Verify kernel tarball checksum (optional)
+  ansible.builtin.shell: |
+    echo "{{ kernel_tarball_checksum }}  kernel.tar.xz" | sha256sum -c -
+  args:
+    chdir: "/home/builder/src/kernel-build"
+  register: checksum_out
+  changed_when: false
+  failed_when: checksum_out.rc != 0
+  when: kernel_tarball_checksum is defined
+
+- name: Report checksum status
+  ansible.builtin.debug:
+    msg: "Checksum OK"
+  when: kernel_tarball_checksum is defined
+
+# =============================================================================
+# 4. Extract kernel sources
+# =============================================================================
+- name: Extract kernel sources (idempotent)
+  ansible.builtin.unarchive:
+    src: "/home/builder/src/kernel-build/kernel.tar.xz"
+    dest: "/home/builder/src/kernel-build"
+    remote_src: true
+    creates: "/home/builder/src/kernel-build/linux"
+
+- name: Report extraction status
+  ansible.builtin.debug:
+    msg: "Kernel sources extracted into /home/builder/src/kernel-build/linux"
+
+# =============================================================================
+# 5. Workspace preparation
+# =============================================================================
+- name: Ensure patches directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/patches"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+- name: Ensure artifacts directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+# =============================================================================
+# 6. Fetch stage summary
+# =============================================================================
+- name: Fetch stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      FETCH STAGE COMPLETE
+      - build root validated
+      - kernel tarball downloaded
+      - checksum verified (if provided)
+      - sources extracted
+      - workspace prepared
+      ------------------------------------------------------------

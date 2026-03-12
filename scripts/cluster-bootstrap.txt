@@ -1,0 +1,178 @@
+FILE: cluster-bootstrap.txt
+PURPOSE: Operational doctrine and usage guide for the jumper-mode control-plane stabilizer script.
+FORMAT: Plain text, ASCII-only, nano-safe.
+
+-------------------------------------------------------------------------------
+CLUSTER-BOOTSTRAP SCRIPT DOCTRINE
+-------------------------------------------------------------------------------
+
+OVERVIEW
+--------
+This script manages "jumper mode" on a Kubernetes master node. Jumper mode
+temporarily enables worker-mode components (flannel, kube-proxy, containerd-shims)
+on the master to assist with cluster bootstrap, networking recovery, or emergency
+scheduling.
+
+On low-memory ARMv7 masters (e.g., Raspberry Pi CM3+), running worker-mode
+components on the master consumes 20–40 MB of RAM. This can prevent the API
+server from starting, cause swap storms, and stall k3s bootstrap.
+
+The script provides three entry points:
+  --on          Enable jumper mode (master acts as a worker)
+  --off         Safely disable jumper mode (return to pure control-plane)
+  --forceclean  Emergency hard reset when the master is stuck or kubectl is down
+
+-------------------------------------------------------------------------------
+WHY JUMPER MODE EXISTS
+-------------------------------------------------------------------------------
+Low-memory masters cannot always bootstrap cleanly. Worker-mode components
+consume enough RAM to push the master into swap, preventing the API server from
+coming online. Jumper mode allows the master to temporarily participate in the
+data plane until the cluster stabilizes.
+
+Once the API server is healthy and workers are online, jumper mode must be
+removed to free memory and restore the master to a pure control-plane role.
+
+-------------------------------------------------------------------------------
+COMMAND SUMMARY
+-------------------------------------------------------------------------------
+
+1. --on
+--------
+Enables worker-mode on the master.
+
+Actions performed:
+  - Removes master NoSchedule taint
+  - Ensures kube-proxy image is imported on all nodes
+  - Restarts flannel and kube-proxy DaemonSets
+  - Waits for flannel and kube-proxy to become Ready on the master
+  - Waits for a minimum number of Ready workers
+
+Use when:
+  - Bootstrapping the cluster
+  - Recovering networking
+  - Temporarily needing the master to run workloads
+
+Do NOT use when:
+  - The master is already under memory pressure
+  - The API server is failing to start
+
+-------------------------------------------------------------------------------
+
+2. --off
+--------
+Safely disables worker-mode on the master.
+
+Actions performed:
+  - Verifies enough workers have flannel + kube-proxy
+  - Re-applies master NoSchedule taint
+  - Drains workloads from the master
+  - Removes worker-mode artifacts:
+      flannel, kube-proxy, containerd-shims, pause containers
+  - Removes flannel.1 interface
+  - Flushes iptables
+  - Deletes pods scheduled on the master
+
+Use when:
+  - API server is healthy
+  - kubectl works
+  - Workers are Ready
+  - You want to return the master to pure control-plane
+
+Do NOT use when:
+  - kubectl cannot connect
+  - The master is stuck in "activating (start)"
+  - TLS handshake timeouts occur
+
+-------------------------------------------------------------------------------
+
+3. --forceclean
+----------------
+Emergency hard reset to pure control-plane state.
+
+This bypasses all safety checks and does not require kubectl to be functional.
+
+Actions performed:
+  - Re-applies master NoSchedule taint
+  - Kills flannel
+  - Kills kube-proxy
+  - Kills containerd-shims
+  - Kills pause containers
+  - Removes flannel.1 interface
+  - Flushes iptables
+  - Deletes pods without draining
+  - Leaves the master in a clean control-plane state
+
+Use when:
+  - The master is stuck in "activating (start)"
+  - API server is unreachable
+  - kubectl commands fail
+  - TLS handshake timeouts occur
+  - Memory pressure prevents bootstrap
+  - swap > 150 MB
+  - free RAM < 30 MB
+  - k3s-server RES > 600 MB
+  - kswapd0 is active
+  - "server is not ready" loops
+  - "context deadline exceeded" loops
+  - "failed to get CA certs" loops
+
+This is the "break glass" option.
+
+-------------------------------------------------------------------------------
+OPERATIONAL DOCTRINE
+-------------------------------------------------------------------------------
+
+WHEN TO USE --ON
+-----------------
+- Cluster bootstrap
+- Network recovery
+- Temporary scheduling
+- Worker nodes need flannel to converge
+
+WHEN TO USE --OFF
+------------------
+- API server is up
+- kubectl works
+- At least 2 workers have full network stack
+- Master is stable
+
+WHEN TO USE --FORCECLEAN
+-------------------------
+- Master is choking on memory
+- k3s-server stuck in bootstrap
+- TLS handshake timeouts
+- kubectl cannot drain or delete pods
+- swap > 150 MB
+- free RAM < 30 MB
+- k3s-server RES > 600 MB
+- Master cannot complete bootstrap without freeing memory
+
+-------------------------------------------------------------------------------
+MEMORY PRESSURE SIGNALS
+-------------------------------------------------------------------------------
+If you see any of these, jumper mode must be removed immediately:
+
+- free RAM < 30 MB
+- swap > 150 MB
+- k3s-server RES > 600 MB
+- kswapd0 active
+- TLS handshake timeout
+- "server is not ready"
+- "context deadline exceeded"
+- "failed to get CA certs"
+- "activating (start)" for > 5 minutes
+
+-------------------------------------------------------------------------------
+RECOVERY SEQUENCE
+-------------------------------------------------------------------------------
+1. If API server is down → run --forceclean
+2. Wait for k3s-server to become "active (running)"
+3. Verify workers are Ready
+4. Fix any failing worker (e.g., password mismatch)
+5. Cluster stabilizes
+6. Continue normal operations
+
+-------------------------------------------------------------------------------
+END OF FILE
+-------------------------------------------------------------------------------

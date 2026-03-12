@@ -1,0 +1,15 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/ingress.yaml
+# PURPOSE:
+#   Minimal values for ingress-nginx on k3s.
+#   Exposes HTTP/HTTPS via NodePort for small ARMv7 cluster.
+# =====================================================================
+
+controller:
+  service:
+    type: NodePort
+    nodePorts:
+      http: 30080
+      https: 30443
+  metrics:
+    enabled: true

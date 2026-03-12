@@ -46,7 +46,7 @@
         msg:
           - "DISTCC BUILD MODE active."
           - "k3s stopped on builder and workers."
-          - "tmpfs mounted on builder."
+## TMPFS-PURGED           - "tmpfs mounted on builder."
           - "Builder is clean (no distccd)."
           - "Workers are running distccd."
-          - "Safe to run kernel-build.yml now."
+## TMPFS-PURGED           - "Safe to run kernel-build.yml now."

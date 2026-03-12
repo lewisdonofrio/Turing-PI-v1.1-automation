@@ -1,0 +1,24 @@
+---
+# cluster-worker-onboard.yml
+# Canonical worker onboarding pipeline:
+# 1) Ground the node (sysctl, cgroups, kernel, dirs)
+# 2) Install & join k3s-agent
+# 3) Postflight validation (node + core pods)
+
+- hosts: workers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    k3s_server_url: "https://kubenode1:6443"
+    k3s_token_file: "/var/lib/rancher/k3s/server/node-token"
+
+  tasks:
+    - name: Ground the worker (sysctl, cgroups, kernel, dirs)
+      include_tasks: tasks/worker-grounding.yml
+
+    - name: Install and join k3s-agent
+      include_tasks: tasks/worker-install.yml
+
+    - name: Validate worker health and core pods
+      include_tasks: tasks/worker-postflight.yml

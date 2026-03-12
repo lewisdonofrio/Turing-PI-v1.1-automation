@@ -1,0 +1,178 @@
+---
+- name: Full k3s kernel sanity check (runtime + config)
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    namespace_list:
+      - user
+      - net
+      - pid
+      - ipc
+      - uts
+
+    netfilter_modules:
+      - iptable_nat
+      - nf_nat
+      - xt_MASQUERADE
+
+    ipvs_modules:
+      - ip_vs
+      - ip_vs_rr
+      - ip_vs_wrr
+      - ip_vs_sh
+
+    bridge_modules:
+      - bridge
+      - br_netfilter
+
+  tasks:
+
+    # -------------------------------
+    # CGROUPS
+    # -------------------------------
+    - name: Check if cgroup2 is mounted
+      shell: "mount | grep -q cgroup2 && echo yes || echo no"
+      register: cgroup2_mounted
+
+    - name: Read cgroup2 controllers
+      shell: "cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null || echo ''"
+      register: cgroup2_ctrls
+
+    # -------------------------------
+    # NAMESPACES
+    # -------------------------------
+    - name: Check namespace support
+      shell: "zgrep -q 'CONFIG_{{ item | upper }}_NS=y' /proc/config.gz && echo yes || echo no"
+      loop: "{{ namespace_list }}"
+      register: ns_results
+
+    # -------------------------------
+    # NETFILTER MODULES
+    # -------------------------------
+    - name: Check netfilter modules exist
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ netfilter_modules }}"
+      register: nf_mods
+
+    - name: Check MASQUERADE usability
+      shell: |
+        iptables -t nat -A POSTROUTING -j MASQUERADE 2>/dev/null && echo yes || echo no
+      register: masq_runtime
+      ignore_errors: true
+
+    - name: Cleanup MASQUERADE test rule
+      shell: "iptables -t nat -D POSTROUTING -j MASQUERADE 2>/dev/null || true"
+
+    # -------------------------------
+    # IPTABLES / NFTABLES
+    # -------------------------------
+    - name: Detect iptables backend
+      shell: "iptables -V 2>/dev/null"
+      register: ipt_version
+
+    - name: Check nft binary
+      shell: "command -v nft >/dev/null && echo yes || echo no"
+      register: nft_present
+
+    # -------------------------------
+    # OVERLAYFS
+    # -------------------------------
+    - name: Check overlayfs module
+      shell: "modinfo overlay >/dev/null 2>&1 && echo yes || echo no"
+      register: overlay_mod
+
+    - name: Test overlayfs mount
+      shell: |
+        mkdir -p /tmp/ovl/{lower,upper,work,merged}
+        touch /tmp/ovl/lower/testfile
+        mount -t overlay overlay -o lowerdir=/tmp/ovl/lower,upperdir=/tmp/ovl/upper,workdir=/tmp/ovl/work /tmp/ovl/merged 2>/dev/null && echo yes || echo no
+      register: overlay_mount
+      ignore_errors: true
+
+    - name: Cleanup overlayfs mount
+      shell: "umount /tmp/ovl/merged 2>/dev/null || true"
+
+    # -------------------------------
+    # BRIDGE
+    # -------------------------------
+    - name: Check bridge modules
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ bridge_modules }}"
+      register: bridge_mods
+
+    - name: Check bridge-nf-call-iptables
+      shell: "sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null || echo 0"
+      register: bridge_nf
+
+    # -------------------------------
+    # IPVS
+    # -------------------------------
+    - name: Check IPVS modules
+      shell: "modinfo {{ item }} >/dev/null 2>&1 && echo yes || echo no"
+      loop: "{{ ipvs_modules }}"
+      register: ipvs_mods
+
+    - name: Test IPVS load
+      shell: "modprobe ip_vs 2>/dev/null && echo yes || echo no"
+      register: ipvs_load
+
+    # -------------------------------
+    # CONNTRACK
+    # -------------------------------
+    - name: Check nf_conntrack module
+      shell: "modinfo nf_conntrack >/dev/null 2>&1 && echo yes || echo no"
+      register: conntrack_mod
+
+    - name: Test conntrack CLI
+      shell: "conntrack -L >/dev/null 2>&1 && echo yes || echo no"
+      register: conntrack_cli
+      ignore_errors: true
+
+    # -------------------------------
+    # SUMMARY
+    # -------------------------------
+    - name: Print summary
+      debug:
+        msg: |
+          === Kernel Sanity Summary for {{ inventory_hostname }} ===
+
+          Cgroups:
+            - cgroup2 mounted: {{ cgroup2_mounted.stdout }}
+            - controllers: {{ cgroup2_ctrls.stdout }}
+
+          Namespaces:
+          {% for r in ns_results.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+
+          Netfilter:
+          {% for r in nf_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - MASQUERADE runtime: {{ masq_runtime.stdout }}
+
+          IPTables/NFT:
+            - iptables version: {{ ipt_version.stdout }}
+            - nft present: {{ nft_present.stdout }}
+
+          OverlayFS:
+            - module: {{ overlay_mod.stdout }}
+            - mount test: {{ overlay_mount.stdout }}
+
+          Bridge:
+          {% for r in bridge_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - bridge-nf-call-iptables: {{ bridge_nf.stdout }}
+
+          IPVS:
+          {% for r in ipvs_mods.results %}
+            - {{ r.item }}: {{ 'OK' if r.stdout == 'yes' else 'MISSING' }}
+          {% endfor %}
+            - IPVS load: {{ ipvs_load.stdout }}
+
+          Conntrack:
+            - module: {{ conntrack_mod.stdout }}
+            - CLI usable: {{ conntrack_cli.stdout }}

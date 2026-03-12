@@ -1,0 +1,20 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/prometheus.yaml
+# PURPOSE:
+#   Minimal kube-prometheus-stack config for small ARMv7 k3s cluster.
+#   Keeps resource usage low and exposes Grafana via NodePort.
+# =====================================================================
+
+grafana:
+  service:
+    type: NodePort
+    nodePort: 30300
+  adminUser: admin
+  adminPassword: admin
+
+prometheus:
+  service:
+    type: ClusterIP
+
+alertmanager:
+  enabled: true

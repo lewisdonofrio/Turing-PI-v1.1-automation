@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-proxy
+  namespace: kube-system
+  labels:
+    k8s-app: kube-proxy
+spec:
+  selector:
+    matchLabels:
+      k8s-app: kube-proxy
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-proxy
+    spec:
+      hostNetwork: true
+      serviceAccountName: kube-proxy
+
+      containers:
+      - name: kube-proxy
+        image: docker.io/library/kube-proxy:v1.34-armv7-glibc
+        command:
+        - /usr/local/bin/kube-proxy
+        - --config=/var/lib/kube-proxy/config.conf
+        - --hostname-override=$(NODE_NAME)
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+
+        volumeMounts:
+        - name: kube-proxy
+          mountPath: /var/lib/kube-proxy
+        - name: host-kubeconfig
+          mountPath: /etc/rancher/k3s/k3s.yaml
+          readOnly: true
+
+      volumes:
+      - name: kube-proxy
+        configMap:
+          name: kube-proxy
+
+      - name: host-kubeconfig
+        hostPath:
+          path: /etc/rancher/k3s/k3s.yaml
+          type: File

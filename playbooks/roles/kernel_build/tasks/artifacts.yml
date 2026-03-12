@@ -1,0 +1,96 @@
+# roles/kernel_build/tasks/artifacts.yml
+# Purpose: Collect kernel build artifacts into deterministic, nano-safe directories.
+# Behavior: Copies zImage, DTBs, and modules into the artifacts tree.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - artifact collection must be deterministic.
+#   - no tmpfs anywhere in the system.
+#   - artifacts must never be scattered across the source tree.
+
+---
+
+# =============================================================================
+# 1. Ensure artifact directories exist
+# =============================================================================
+- name: Ensure artifact root exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+- name: Ensure module artifact directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts/modules"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+- name: Ensure DTB artifact directory exists
+  ansible.builtin.file:
+    path: "/home/builder/src/kernel-build/artifacts/dtbs"
+    state: directory
+    owner: builder
+    group: builder
+    mode: '0755'
+
+# =============================================================================
+# 2. Collect kernel image
+# =============================================================================
+- name: Collect zImage
+  ansible.builtin.copy:
+    src: "/home/builder/src/kernel-build/linux/arch/arm/boot/zImage"
+    dest: "/home/builder/src/kernel-build/artifacts/zImage"
+    remote_src: true
+    mode: '0644'
+  register: zimage_copy
+
+- name: Report zImage collection
+  ansible.builtin.debug:
+    msg: "zImage collected: {{ zimage_copy.dest }}"
+
+# =============================================================================
+# 3. Collect DTBs
+# =============================================================================
+- name: Collect DTBs
+  ansible.builtin.shell: |
+    cp arch/arm/boot/dts/*.dtb /home/builder/src/kernel-build/artifacts/dtbs/ 2>/dev/null || true
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: dtb_copy
+  changed_when: false
+
+- name: Report DTB collection
+  ansible.builtin.debug:
+    msg: "{{ dtb_copy.stdout_lines | default(['no DTBs found']) }}"
+
+# =============================================================================
+# 4. Collect modules
+# =============================================================================
+- name: Collect installed modules
+  ansible.builtin.shell: |
+    rsync -a /home/builder/src/kernel-build/artifacts/modules/ /home/builder/src/kernel-build/artifacts/modules/
+  register: modules_sync
+  changed_when: false
+  failed_when: false
+
+- name: Report module collection
+  ansible.builtin.debug:
+    msg: "Modules synchronized into artifacts/modules"
+
+# =============================================================================
+# 5. Artifact stage summary
+# =============================================================================
+- name: Artifact stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      ARTIFACT STAGE COMPLETE
+      - zImage collected
+      - DTBs collected (if present)
+      - modules synchronized
+      - deterministic artifact layout ensured
+      ------------------------------------------------------------

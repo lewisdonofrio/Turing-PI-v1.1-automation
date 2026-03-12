@@ -1,0 +1,71 @@
+---
+- name: Offboard nodes from k3s
+  hosts: "{{ target | default('k3s_cluster') }}"
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 1. Stop services cleanly
+    # ------------------------------------------------------------
+    - name: Stop k3s services if running
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - k3s
+        - k3s-agent
+      ignore_errors: true
+
+    # ------------------------------------------------------------
+    # 2. Run uninstall scripts if present
+    # ------------------------------------------------------------
+    - name: Run uninstall script if present
+      shell: |
+        if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
+          /usr/local/bin/k3s-uninstall.sh
+        elif [ -x /usr/local/bin/k3s-agent-uninstall.sh ]; then
+          /usr/local/bin/k3s-agent-uninstall.sh
+        fi
+      ignore_errors: true
+
+    # ------------------------------------------------------------
+    # 3. Remove leftover k3s, kubelet, CNI, and containerd state
+    # ------------------------------------------------------------
+    - name: Remove leftover Kubernetes directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+        - /var/lib/cni
+        - /opt/cni/bin
+        - /run/k3s
+        - /run/flannel
+        - /etc/systemd/system/k3s.service
+        - /etc/systemd/system/k3s-agent.service
+        - /var/lib/containerd/io.containerd.runtime.v2.task/k8s.io
+        - /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+      ignore_errors: true
+
+    # ------------------------------------------------------------
+    # 4. Reload systemd to forget removed units
+    # ------------------------------------------------------------
+    - name: Reload systemd units
+      command: systemctl daemon-reload
+      ignore_errors: true
+
+    # ------------------------------------------------------------
+    # 5. Remove uninstall scripts (optional cleanup)
+    # ------------------------------------------------------------
+    - name: Remove uninstall scripts
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/k3s-uninstall.sh
+        - /usr/local/bin/k3s-agent-uninstall.sh
+      ignore_errors: true

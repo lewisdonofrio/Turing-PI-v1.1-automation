@@ -1,0 +1,93 @@
+---
+- name: Install or update k3s workers (canonical kubenode7 baseline)
+  hosts: workers
+  become: true
+  gather_facts: true
+
+  vars:
+    # --- Cluster identity ---
+    k3s_url: "https://kubenode1.home.lab:6443"
+    k3s_token: "K108aa1cca1938c228cd282ca6ec453359610f6ebb1af59bf2cb02026e10c5c228b::server:a2d4be8caf31854c5d8ecb375ef409d6"
+
+    # --- Versioning ---
+    k3s_version: "v1.34.3+k3s3"
+
+    # --- Binary paths ---
+    k3s_bin_dir: /usr/local/bin
+    k3s_ctr_bin: "/var/lib/rancher/k3s/data/current/bin/ctr"
+
+    # --- Systemd paths ---
+    k3s_agent_env: /etc/systemd/system/k3s-agent.service.env
+    k3s_agent_service: /etc/systemd/system/k3s-agent.service
+    k3s_agent_dropin_dir: /etc/systemd/system/k3s-agent.service.d
+    k3s_agent_delay_dropin: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+    k3s_agent_start_delay: 5
+
+    # --- Images ---
+    kube_proxy_image_tar: "/opt/images/kube-proxy.tar"
+    kube_proxy_image: "kube-proxy:v1.34-armv7-glibc"
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 0. Optional full reset (force rejoin)
+    # ------------------------------------------------------------
+    - name: Optional full reset
+      import_tasks: tasks/00-reset-worker.yml
+      when: force_rejoin | default(false) | bool
+
+    # ------------------------------------------------------------
+    # 1. Kernel + cgroup + sysctl + module verification
+    # ------------------------------------------------------------
+    - name: Verify kernel + cgroups
+      import_tasks: tasks/01-verify-kernel.yml
+
+    # ------------------------------------------------------------
+    # 2. Install correct ARMv7 k3s binary
+    # ------------------------------------------------------------
+    - name: Install k3s binary
+      import_tasks: tasks/02-install-k3s-binary.yml
+
+    # ------------------------------------------------------------
+    # 2b. Install k3s-agent using official installer
+    # ------------------------------------------------------------
+    - name: Install k3s agent (official installer)
+      import_tasks: tasks/35-install-agent.yml
+
+    # ------------------------------------------------------------
+    # 3. Preload kube-proxy image into k3s containerd
+    # ------------------------------------------------------------
+    - name: Preload kube-proxy image
+      import_tasks: tasks/03-preload-kube-proxy.yml
+
+    # ------------------------------------------------------------
+    # 4. Install canonical systemd unit + env file
+    # ------------------------------------------------------------
+    - name: Install systemd unit
+      import_tasks: tasks/04-install-systemd.yml
+
+    # ------------------------------------------------------------
+    # 4a. Utilize the embedded CNI projects
+    # ------------------------------------------------------------
+
+    - name: Enforce embedded CNI layout
+      import_tasks: tasks/04a-ensure-cni.yml
+
+
+    # ------------------------------------------------------------
+    # 5. Install delay drop-in (ExecStartPre sleep)
+    # ------------------------------------------------------------
+    - name: Install delay drop-in
+      import_tasks: tasks/05-install-delay.yml
+
+    # ------------------------------------------------------------
+    # 6. Start agent + verify agent is running
+    # ------------------------------------------------------------
+    - name: Start agent
+      import_tasks: tasks/06-start-agent.yml
+
+    # ------------------------------------------------------------
+    # 7. Assert CNI + flannel + kube-proxy + node readiness
+    # ------------------------------------------------------------
+    - name: Assert CNI + flannel readiness
+      import_tasks: tasks/07-assert-cni.yml

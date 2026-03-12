@@ -1,0 +1,38 @@
+---
+- name: Install k3s server (single-server mode)
+  hosts: master
+  become: true
+  gather_facts: false
+
+  vars:
+    k3s_version: "v1.34.3+k3s3"
+
+  tasks:
+
+    # ------------------------------------------------------------
+    # 1. Install k3s server ONLY on the master
+    # ------------------------------------------------------------
+    - name: Install k3s server
+      shell: |
+        curl -sfL https://get.k3s.io \
+          | INSTALL_K3S_VERSION="{{ k3s_version }}" \
+            sh -
+      args:
+        executable: /bin/bash
+
+    # ------------------------------------------------------------
+    # 2. Read the node token from the master
+    # ------------------------------------------------------------
+    - name: Read node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: token_raw
+
+    # ------------------------------------------------------------
+    # 3. Write token to group_vars for workers
+    # ------------------------------------------------------------
+    - name: Write token to group_vars/workers.yml
+      copy:
+        dest: "/opt/ansible-k3s-cluster/inventory/group_vars/workers.yml"
+        content: |
+          k3s_token: "{{ token_raw.content | b64decode | trim }}"

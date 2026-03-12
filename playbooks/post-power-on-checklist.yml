@@ -7,7 +7,7 @@
 #
 # NOTES:
 #   - ASCII-only, nano-safe, no tabs.
-#   - No builder-local pump-mode or tmpfs logic.
+## TMPFS-PURGED #   - No builder-local pump-mode or tmpfs logic.
 #   - Deterministic, 2AM-safe, future-maintainer-safe.
 # =====================================================================
 

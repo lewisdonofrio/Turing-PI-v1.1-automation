@@ -2,90 +2,50 @@
 set -euo pipefail
 
 # =====================================================================
-#  /home/builder/scripts/kernel-build.sh
+#  kernel-build.sh (out-of-tree, ARMv7, distcc edition)
 #
-#  Purpose:
-#    Deterministic ARMv7 + k3s kernel build using pump-mode distcc.
-#    Requires kernel-build-preflight.sh to have run successfully.
-#
-#  Notes:
-#    - ASCII-only, nano-safe, deterministic.
-#    - Must run as builder on kubenode1.
-#    - Preflight guarantees pump mode, PATH, CC/HOSTCC, and environment.
+#  Doctrine:
+#    - Source tree: /home/builder/src/kernel
+#    - OUT_DIR:     /home/builder/kernel-out
+#    - .config MUST live in OUT_DIR, not the source tree
+#    - Source tree must be pristine (git clean -fdx + mrproper)
+#    - Local gcc for prepare + syncconfig
+#    - distcc gcc for parallel build
+#    - Full ARMv7 build: Image, zImage, dtbs, modules
 # =====================================================================
-
-# ---------------------------------------------------------------------
-#  Load pump-mode environment from preflight
-# ---------------------------------------------------------------------
-
-if [ -f /tmp/kernel-preflight.env ]; then
-    . /tmp/kernel-preflight.env
-else
-    echo "ERROR: Preflight environment missing. Run kernel-build-preflight.sh first."
-    exit 1
-fi
-
-# ---------------------------------------------------------------------
-#  Verify preflight marker
-# ---------------------------------------------------------------------
-
-if [ ! -f /tmp/kernel-preflight.ok ]; then
-    echo "ERROR: Preflight not run. Run kernel-build-preflight.sh first."
-    exit 1
-fi
-
-# ---------------------------------------------------------------------
-#  Single-instance lock
-# ---------------------------------------------------------------------
-
-LOCKFILE="/tmp/kernel-build.lock"
-exec 9>"${LOCKFILE}"
-if ! flock -n 9; then
-    echo "ERROR: kernel-build already running (lockfile held)."
-    exit 1
-fi
 
 # ---------------------------------------------------------------------
 #  Environment validation
 # ---------------------------------------------------------------------
-
-if [ "$(whoami)" != "builder" ]; then
+if [[ "$(whoami)" != "builder" ]]; then
     echo "ERROR: Must run as builder user"
     exit 1
 fi
 
-if [ "$(hostname)" != "kubenode1" ]; then
+if [[ "$(hostname)" != "kubenode1" ]]; then
     echo "ERROR: Must run on kubenode1"
     exit 1
 fi
 
-SRC="/home/builder/src/kernel"
+SRC_DIR="/home/builder/src/kernel"
+OUT_DIR="/home/builder/kernel-out"
 LOGDIR="/home/builder/build-logs"
-CONFIG_WRAPPER="/home/builder/scripts/run-k3s-kernel-config.sh"
-PUMP_MAKE="/home/builder/scripts/pump-make.sh"
+CROSS_COMPILE=""
+export PATH=/home/builder/rpi-tools/arm-bcm2708/arm-linux-gnueabihf/bin:$PATH
 
-if [ ! -d "${SRC}" ]; then
-    echo "ERROR: Kernel source directory not found: ${SRC}"
-    exit 1
-fi
-
-if [ ! -x "${CONFIG_WRAPPER}" ]; then
-    echo "ERROR: Config wrapper not executable: ${CONFIG_WRAPPER}"
-    exit 1
-fi
-
-if [ ! -x "${PUMP_MAKE}" ]; then
-    echo "ERROR: pump-make wrapper not executable: ${PUMP_MAKE}"
+if [[ ! -d "${SRC_DIR}" ]]; then
+    echo "ERROR: Kernel source directory not found: ${SRC_DIR}"
     exit 1
 fi
 
 mkdir -p "${LOGDIR}"
-cd "${SRC}"
+mkdir -p "${OUT_DIR}"
+
+cd "${SRC_DIR}"
 
 # ---------------------------------------------------------------------
 #  Job count parsing (default j12, max j12)
 # ---------------------------------------------------------------------
-
 RAW_JOBS="${1:-12}"
 JOBS="${RAW_JOBS#j}"
 
@@ -94,112 +54,137 @@ if ! [[ "${JOBS}" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-if [ "${JOBS}" -gt 12 ]; then
+if [[ "${JOBS}" -gt 12 ]]; then
     echo "ERROR: Maximum allowed job count is 12"
     exit 1
 fi
 
-echo "Compiler settings:"
-echo "  CC=${CC:-unset}"
-echo "  HOSTCC=${HOSTCC:-unset}"
-echo "  Jobs=${JOBS}"
+echo "=============================================================="
+echo "  KERNEL BUILD: OUT-OF-TREE ARMv7 BUILD (distcc accelerated)"
+echo "=============================================================="
+echo "Source directory: ${SRC_DIR}"
+echo "Output directory: ${OUT_DIR}"
+echo "Jobs:             ${JOBS}"
+echo
 
 # ---------------------------------------------------------------------
-#  Pump-mode verification (doctrine-aligned)
+#  Ensure source tree is pristine
 # ---------------------------------------------------------------------
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "ERROR: Source tree is not clean."
+    echo "Run: git clean -fdx && make mrproper"
+    exit 1
+fi
 
-echo "Pump-mode is wrapper-managed; include-server will start on demand."
+echo "Source tree is clean."
+
+# ---------------------------------------------------------------------
+#  Ensure .config exists in OUT_DIR
+# ---------------------------------------------------------------------
+if [[ ! -f "${OUT_DIR}/.config" ]]; then
+    echo "ERROR: No .config found in ${OUT_DIR}"
+    echo "Copy your config into OUT_DIR:"
+    echo "  cp /opt/ansible-k3s-cluster/kernel-configs/<config> ${OUT_DIR}/.config"
+    exit 1
+fi
+
+echo ".config found in OUT_DIR."
 
 # ---------------------------------------------------------------------
 #  Logging setup
 # ---------------------------------------------------------------------
-
 STAMP=$(date +"%Y%m%d-%H%M%S")
 LOGFILE="${LOGDIR}/build-${STAMP}.log"
 LATEST="${LOGDIR}/latest.log"
 
-echo "Starting kernel build"
 echo "Logging to ${LOGFILE}"
-
 START=$(date +%s)
 
 # ---------------------------------------------------------------------
-#  CRITICAL:
-#    CC/HOSTCC must be exported BEFORE prepare stage
-#    Preflight already set CC="pump gcc"
+#  Stage 1: prepare (local gcc)
 # ---------------------------------------------------------------------
+echo "[1/4] Running prepare (local gcc)..."
 
-export CC="${CC}"
-export HOSTCC="${HOSTCC}"
-
-# ---------------------------------------------------------------------
-#  Stage 1: Config wrapper
-# ---------------------------------------------------------------------
-
-echo "[1/3] Running kernel config wrapper..."
-"${CONFIG_WRAPPER}"
-
-# ---------------------------------------------------------------------
-#  Stage 2: Local prepare stage (real gcc only)
-# ---------------------------------------------------------------------
-
-echo "[2/3] Running prepare stage (local only)..."
-
-REAL_CC="${CC:-}"
-REAL_HOSTCC="${HOSTCC:-}"
-REAL_PATH="${PATH:-}"
-
-export CC="gcc"
-export HOSTCC="gcc"
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
-
-make ARCH=arm prepare
-
-export CC="${REAL_CC}"
-export HOSTCC="${REAL_HOSTCC}"
-export PATH="${REAL_PATH}"
-
-# ---------------------------------------------------------------------
-#  Stage 3: Pre-syncconfig (real gcc only)
-# ---------------------------------------------------------------------
-
-echo "[3/3] Pre-syncconfig (local, real gcc)..."
-
-REAL_CC="${CC:-}"
-REAL_HOSTCC="${HOSTCC:-}"
-REAL_PATH="${PATH:-}"
-
-export CC="gcc"
-export HOSTCC="gcc"
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
-
-make ARCH=arm syncconfig
-
-export CC="${REAL_CC}"
-export HOSTCC="${REAL_HOSTCC}"
-export PATH="${REAL_PATH}"
-
-# ---------------------------------------------------------------------
-#  Stage 3: Distributed build via pump-make
-# ---------------------------------------------------------------------
-
-echo "[3/3] Running distributed build via pump-make..."
-
-"${PUMP_MAKE}" \
-    -j"${JOBS}" \
+make \
     ARCH=arm \
-    Image modules dtbs \
+     \
+    CC=gcc \
+    HOSTCC=gcc \
+    O="${OUT_DIR}" \
+    prepare
+
+# ---------------------------------------------------------------------
+#  Stage 2: syncconfig (local gcc)
+# ---------------------------------------------------------------------
+echo "[2/4] Running syncconfig (local gcc)..."
+
+make \
+    ARCH=arm \
+     \
+    CC=gcc \
+    HOSTCC=gcc \
+    O="${OUT_DIR}" \
+    syncconfig
+
+# ---------------------------------------------------------------------
+#  Stage 3: Distributed build via plain distcc
+# ---------------------------------------------------------------------
+echo "[3/4] Running distributed build via distcc..."
+
+export DISTCC_HOSTS="\
+kubenode2.home.lab/4 \
+kubenode3.home.lab/4 \
+kubenode4.home.lab/4 \
+kubenode5.home.lab/4 \
+kubenode6.home.lab/4 \
+kubenode7.home.lab/4"
+
+make -j"${JOBS}" \
+    ARCH=arm \
+     \
+    CC="distcc gcc" \
+    HOSTCC=gcc \
+    O="${OUT_DIR}" \
+    Image zImage dtbs modules \
     2>&1 | tee "${LOGFILE}"
+
+# ---------------------------------------------------------------------
+#  Stage 4: Install modules
+# ---------------------------------------------------------------------
+
+echo "[4/4] Installing modules into OUT_DIR..."
+
+# Create the target module directory inside OUT_DIR
+KREL=$(make -s -C "${SRC_DIR}" O="${OUT_DIR}" ARCH=arm kernelrelease)
+MODDIR="${OUT_DIR}/lib/modules/${KREL}"
+
+mkdir -p "${MODDIR}"
+
+# Install modules into OUT_DIR instead of /lib/modules
+make -C "${SRC_DIR}" \
+     O="${OUT_DIR}" \
+     ARCH=arm \
+     INSTALL_MOD_PATH="${OUT_DIR}" \
+     modules_install
+
+# Create the canonical 'build' symlink expected by depmod and modprobe
+ln -sf "${OUT_DIR}" "${MODDIR}/build"
+
+echo "Modules installed to: ${MODDIR}"
 
 # ---------------------------------------------------------------------
 #  Timing and summary
 # ---------------------------------------------------------------------
-
 END=$(date +%s)
 ELAPSED=$((END - START))
 
 ln -sf "${LOGFILE}" "${LATEST}"
 
-echo "Build completed"
+echo
+echo "=============================================================="
+echo "  KERNEL BUILD COMPLETE"
+echo "=============================================================="
+echo "Artifacts located in: ${OUT_DIR}"
 echo "Elapsed time: ${ELAPSED} seconds"
+echo "=============================================================="
 exit 0

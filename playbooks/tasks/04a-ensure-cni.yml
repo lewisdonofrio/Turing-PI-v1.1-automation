@@ -1,0 +1,35 @@
+---
+# 04a-ensure-cni.yml
+# Enforce embedded CNI layout without copying anything from master
+
+- name: Remove any hand-managed CNI directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /opt/cni
+    - /etc/cni
+    - /var/lib/cni
+
+- name: Ensure k3s agent CNI net.d directory exists
+  file:
+    path: /var/lib/rancher/k3s/agent/etc/cni/net.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure /opt/cni exists
+  file:
+    path: /opt/cni
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Symlink /opt/cni/bin to k3s embedded CNI bundle
+  file:
+    src: /var/lib/rancher/k3s/data/current/bin
+    dest: /opt/cni/bin
+    state: link
+    force: true

@@ -3,7 +3,7 @@
 # =============================================================================
 - name: Find built kernel package on kubenode1
   find:
-    paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
+## TMPFS-PURGED     paths: "{{ kernel_tmpfs_root }}/linux-rpi-k3s/{{ kernel_pkg_subdir }}"
     patterns: "{{ kernel_pkg_name }}-*.pkg.tar.zst"
     file_type: file
   register: kernel_pkgs

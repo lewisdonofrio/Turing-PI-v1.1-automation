@@ -1,0 +1,29 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/gitops/apps/loki/app.yaml
+# PURPOSE:
+#   GitOps-managed deployment of Loki + Promtail.
+# =====================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
+    targetRevision: main
+    path: gitops/apps/loki/chart
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

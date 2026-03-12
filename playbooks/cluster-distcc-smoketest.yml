@@ -4,6 +4,7 @@
 #           pump-mode is healthy, and distributed preprocessing is active.
 # Author: Lewis Donofrio
 # Notes: Run while watching distccmon-text on the builder. ASCII-only. Idempotent.
+# Doctrine: tmpfs is no longer used anywhere in the system.
 
 ---
 
@@ -27,7 +28,7 @@
   tasks:
 
     # -------------------------------------------------------------------------
-    # Pump-mode readiness
+    # Pump-mode readiness (shim-based)
     # -------------------------------------------------------------------------
     - name: Validate pump-mode health
       ansible.builtin.shell: /home/builder/scripts/pumpctl health
@@ -101,13 +102,8 @@
     - name: Extract worker hosts from verbose output
       ansible.builtin.shell: |
         echo "{{ compile_output.stdout }}" \
-        | grep -oE 'distcc
-
-\[.*\]
-
- [^ ]+:3632' \
-        | awk '{print $NF}' \
-        | sed 's/:3632//'
+        | grep -oE 'distcc.*[[:space:]]([^ ]+):3632' \
+        | awk -F':' '{print $1}'
       register: worker_hosts
       changed_when: false
 
@@ -169,3 +165,24 @@
     - name: Report distccd log tail
       ansible.builtin.debug:
         msg: "Worker {{ inventory_hostname }} log tail: {{ distccd_log.stdout_lines }}"
+
+# =============================================================================
+# Final summary banner
+# =============================================================================
+- name: Distcc smoketest summary
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          DISTCC SMOKETEST COMPLETE
+          - pump-mode validated (shim-based)
+          - distributed compile executed
+          - object file verified
+          - worker participation analyzed
+          - fallback-to-local checked
+          - cc1 activity inspected on workers
+          - distccd logs tailed
+          - tmpfs logic removed (doctrine-compliant)
+          ============================================================

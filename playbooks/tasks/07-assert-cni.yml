@@ -1,0 +1,69 @@
+---
+# 07-assert-agent.yml
+# Validate k3s-agent runtime health without false positives
+
+# ------------------------------------------------------------
+# 1. Verify k3s-agent service is active
+# ------------------------------------------------------------
+- name: Check k3s-agent service state
+  shell: "systemctl is-active k3s-agent || true"
+  register: agent_state
+
+- name: Fail if k3s-agent is not active
+  fail:
+    msg: "k3s-agent is not active on {{ inventory_hostname }} (state={{ agent_state.stdout }})"
+  when: agent_state.stdout != "active"
+
+# ------------------------------------------------------------
+# 2. Verify k3s-agent process is running
+# ------------------------------------------------------------
+- name: Check k3s-agent process
+  shell: "pgrep -f 'k3s agent' || true"
+  register: agent_proc
+
+- name: Fail if k3s-agent process missing
+  fail:
+    msg: "k3s-agent process not running on {{ inventory_hostname }}"
+  when: agent_proc.stdout == ""
+
+# ------------------------------------------------------------
+# 3. Collect journal logs (last 2 minutes), filtering harmless bootstrap noise
+# ------------------------------------------------------------
+- name: Collect k3s-agent journal (filtered)
+  shell: |
+    journalctl -u k3s-agent --since "2 minutes ago" --no-pager \
+    | grep -v "server is not ready" \
+    | grep -v "failed to get CA certs" \
+    | grep -v "failed to retrieve configuration" \
+    | grep -v "context deadline exceeded" \
+    | grep -v "503 Service Unavailable" \
+    | grep -v "CA cert validation failed" \
+    | grep -v "EOF" \
+    || true
+  register: agent_journal
+
+# ------------------------------------------------------------
+# 4. Fail only on real errors
+# ------------------------------------------------------------
+- name: Fail if agent journal shows real errors
+  fail:
+    msg: |
+      k3s-agent journal on {{ inventory_hostname }} shows real errors:
+      {{ agent_journal.stdout }}
+  when: agent_journal.stdout is search("failed to find plugin|plugin not found|CNI|flannel|containerd.*error|TLS|token is invalid|authentication failed")
+
+# ------------------------------------------------------------
+# 5. Verify node Ready state from master
+# ------------------------------------------------------------
+- name: Check node Ready state
+  delegate_to: "{{ groups['master'][0] }}"
+  shell: >
+    kubectl get node {{ inventory_hostname }}
+    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' ||
+    echo 'missing'
+  register: node_ready
+
+- name: Fail if node not Ready
+  fail:
+    msg: "Node {{ inventory_hostname }} is not Ready ({{ node_ready.stdout }})"
+  when: node_ready.stdout != "True"

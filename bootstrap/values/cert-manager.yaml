@@ -1,0 +1,8 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/cert-manager.yaml
+# PURPOSE:
+#   Minimal cert-manager config.
+#   No issuers defined yet; those will be added via GitOps later.
+# =====================================================================
+
+installCRDs: false

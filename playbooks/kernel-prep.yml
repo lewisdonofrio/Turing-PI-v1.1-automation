@@ -1,0 +1,100 @@
+---
+# =============================================================================
+# File: playbooks/kernel-prep.yml
+# Purpose: Ensure kernel is k3s-ready (cgroups, cmdline, reboot, validate)
+# Scope:   All k3s nodes (server + workers)
+# =============================================================================
+
+- name: Prepare kernel for k3s
+  hosts: master,workers
+  become: true
+  gather_facts: false
+
+  vars:
+    kernel_cmdline_path: /boot/cmdline.txt
+    required_cgroup_flags:
+      - cgroup_memory=1
+      - cgroup_enable=memory
+
+  tasks:
+
+    # ------------------------------------------------------------------------
+    # 1. Sanity check: ensure cmdline file exists
+    # ------------------------------------------------------------------------
+    - name: Check for kernel cmdline file
+      stat:
+        path: "{{ kernel_cmdline_path }}"
+      register: cmdline_stat
+
+    - name: Fail if kernel cmdline file is missing
+      fail:
+        msg: "Kernel cmdline file not found at {{ kernel_cmdline_path }}. Adjust kernel_cmdline_path in kernel-prep.yml."
+      when: not cmdline_stat.stat.exists
+
+    # ------------------------------------------------------------------------
+    # 2. Read current cmdline
+    # ------------------------------------------------------------------------
+    - name: Read current kernel cmdline
+      slurp:
+        path: "{{ kernel_cmdline_path }}"
+      register: cmdline_raw
+
+    - name: Decode current kernel cmdline
+      set_fact:
+        kernel_cmdline: "{{ cmdline_raw.content | b64decode | trim }}"
+
+    # ------------------------------------------------------------------------
+    # 3. Determine which required flags are missing
+    # ------------------------------------------------------------------------
+    - name: Compute missing cgroup flags
+      set_fact:
+        missing_cgroup_flags: >-
+          {{
+            required_cgroup_flags
+            | reject('in', kernel_cmdline.split())
+            | list
+          }}
+
+    - name: Debug missing cgroup flags (if any)
+      debug:
+        msg: "Missing cgroup flags: {{ missing_cgroup_flags }}"
+      when: missing_cgroup_flags | length > 0
+
+    # ------------------------------------------------------------------------
+    # 4. Patch cmdline only if flags are missing
+    # ------------------------------------------------------------------------
+    - name: Append missing cgroup flags to kernel cmdline
+      lineinfile:
+        path: "{{ kernel_cmdline_path }}"
+        backrefs: yes
+        regexp: '^(.*)$'
+        line: '\1 {{ missing_cgroup_flags | join(" ") }}'
+      when: missing_cgroup_flags | length > 0
+
+    # ------------------------------------------------------------------------
+    # 5. Reboot only if we changed the cmdline
+    # ------------------------------------------------------------------------
+    - name: Reboot node to apply updated kernel cmdline
+      reboot:
+        msg: "Rebooting to apply kernel cgroup settings for k3s"
+        connect_timeout: 5
+        reboot_timeout: 300
+      when: missing_cgroup_flags | length > 0
+
+    # ------------------------------------------------------------------------
+    # 6. Validate cgroup controllers after reboot
+    # ------------------------------------------------------------------------
+    - name: Check memory cgroup availability
+      command: grep memory /proc/cgroups
+      register: cgroup_memory_check
+      changed_when: false
+      failed_when: cgroup_memory_check.rc != 0
+
+    - name: Fail if memory cgroup is not enabled
+      fail:
+        msg: >
+          Memory cgroup is not enabled after kernel-prep.
+          Check {{ kernel_cmdline_path }} and bootloader configuration.
+      when: >
+        cgroup_memory_check.stdout is search('memory') and
+        (cgroup_memory_check.stdout.split()[3] | int) == 0

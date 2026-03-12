@@ -19,7 +19,7 @@
 # =====================================================================
 
 - import_playbook: kernel-preflight.yml
-- import_playbook: kernel-build.yml
+## TMPFS-PURGED - import_playbook: kernel-build.yml
 - import_playbook: kernel-postbuild-validator.yml
 
 # Distribute artifacts to all nodes BEFORE installation

@@ -23,7 +23,7 @@
 
     - name: Ensure persistent kernel build directory exists
       ansible.builtin.file:
-        path: /home/builder/kernel-build
+## TMPFS-PURGED         path: /home/builder/kernel-build
         state: directory
         owner: builder
         group: builder
@@ -44,5 +44,5 @@
       ansible.builtin.debug:
         msg:
           - "Builder distccd disabled."
-          - "Builder tmpfs unit verified and active."
+## TMPFS-PURGED           - "Builder tmpfs unit verified and active."
           - "Builder environment enforced."

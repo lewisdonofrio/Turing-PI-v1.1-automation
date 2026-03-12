@@ -1,0 +1,78 @@
+---
+# 04-install-systemd.yml
+# Install canonical k3s-agent systemd unit + full env file (kubenode7 baseline)
+
+# ------------------------------------------------------------
+# 1. Write canonical environment file
+# ------------------------------------------------------------
+- name: Write k3s-agent environment file
+  copy:
+    dest: "{{ k3s_agent_env }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      K3S_URL="{{ k3s_url }}"
+      K3S_TOKEN="{{ k3s_token }}"
+      K3S_NODE_NAME="{{ inventory_hostname }}"
+      K3S_NODE_IP="{{ ansible_default_ipv4.address }}"
+      K3S_RESOLV_CONF="/run/systemd/resolve/resolv.conf"
+      K3S_FLANNEL_IFACE="{{ ansible_default_ipv4.interface }}"
+      K3S_KUBECONFIG_MODE="644"
+
+# ------------------------------------------------------------
+# 2. Install canonical systemd unit
+# ------------------------------------------------------------
+- name: Install k3s-agent systemd service
+  copy:
+    dest: "{{ k3s_agent_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Lightweight Kubernetes Agent
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      EnvironmentFile={{ k3s_agent_env }}
+      ExecStartPre=/usr/bin/test -x {{ k3s_bin_dir }}/k3s
+      ExecStart={{ k3s_bin_dir }}/k3s agent
+      Restart=always
+      RestartSec=5
+      KillMode=process
+      LimitNOFILE=1048576
+      LimitNPROC=1048576
+
+      [Install]
+      WantedBy=multi-user.target
+
+# ------------------------------------------------------------
+# 3. Install delay drop-in (required for slow DNS / flannel)
+# ------------------------------------------------------------
+- name: Ensure drop-in directory exists
+  file:
+    path: /etc/systemd/system/k3s-agent.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install startup delay drop-in
+  copy:
+    dest: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPre=/bin/sleep 5
+
+# ------------------------------------------------------------
+# 4. Reload systemd
+# ------------------------------------------------------------
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: true

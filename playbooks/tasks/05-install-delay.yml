@@ -1,0 +1,30 @@
+---
+# 05-install-delay.yml
+# Install canonical k3s-agent startup delay drop-in
+
+- name: Map inventory delay to k3s_agent_start_delay
+  set_fact:
+    k3s_agent_start_delay: "{{ agent_delay }}"
+  when: agent_delay is defined
+
+- name: Ensure k3s-agent drop-in directory exists
+  file:
+    path: "{{ k3s_agent_dropin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install k3s-agent delay drop-in
+  copy:
+    dest: "{{ k3s_agent_delay_dropin }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      ExecStartPre=/bin/sleep {{ k3s_agent_start_delay }}
+
+- name: Reload systemd after installing delay drop-in
+  systemd:
+    daemon_reload: true

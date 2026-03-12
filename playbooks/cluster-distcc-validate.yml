@@ -4,6 +4,7 @@
 #           FQDN, dry-run, and shim-based pump-mode health.
 # Author: Lewis Donofrio
 # Notes: Safe to run at any time. ASCII-only. Idempotent.
+# Doctrine: tmpfs is no longer used anywhere in the system.
 
 ---
 
@@ -22,16 +23,10 @@
       register: builder_distccd
       failed_when: false
 
-    - name: Check tmpfs mount state
-      ansible.builtin.command: systemctl is-active 'tmp-kernel\x2dbuild.mount'
-      register: builder_tmpfs
-      failed_when: false
-
     - name: Report builder state
       ansible.builtin.debug:
         msg:
           - "Builder distccd active: {{ builder_distccd.stdout }}"
-          - "Builder tmpfs mount active: {{ builder_tmpfs.stdout }}"
 
     # =============================================================================
     # Pump-Mode Validation (Shim-Based)
@@ -212,3 +207,23 @@
     - name: Report distcc dry-run
       ansible.builtin.debug:
         msg: "distcc dry-run: {{ distcc_dryrun.stdout }}"
+
+# =============================================================================
+# Final summary banner
+# =============================================================================
+- name: Distcc validation summary
+  hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          DISTCC VALIDATION COMPLETE
+          - Builder pump-mode validated (shim-based)
+          - distccd state checked on all workers
+          - symlinks + override.conf verified
+          - gcc + PATH validated
+          - MTU + FQDN checked
+          - dry-run executed
+          - tmpfs logic removed (doctrine-compliant)
+          ============================================================

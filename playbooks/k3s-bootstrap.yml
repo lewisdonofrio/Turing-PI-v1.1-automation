@@ -1,0 +1,27 @@
+---
+- name: Bootstrap full k3s cluster
+  hosts: master
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Run server install
+      import_playbook: k3s-install-server.yml
+
+- name: Install workers
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Run worker install
+      import_playbook: k3s-install-workers.yml
+
+- name: Validate cluster health
+  hosts: master
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Run health check
+      import_playbook: k3s-health-check.yml

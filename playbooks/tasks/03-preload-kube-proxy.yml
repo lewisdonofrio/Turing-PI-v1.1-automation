@@ -1,0 +1,35 @@
+---
+# 03-preload-kube-proxy.yml
+# Preload kube-proxy image into k3s containerd (k8s.io namespace)
+
+- name: Check if kube-proxy image tar exists
+  stat:
+    path: "{{ kube_proxy_image_tar }}"
+  register: kubeproxy_tar
+
+- name: Preload kube-proxy image into k3s containerd
+  shell: |
+    "{{ k3s_ctr_bin }}" \
+      --address /run/k3s/containerd/containerd.sock \
+      -n k8s.io images import "{{ kube_proxy_image_tar }}"
+  args:
+    executable: /bin/bash
+  when: kubeproxy_tar.stat.exists
+  register: import_result
+  failed_when: import_result.rc != 0
+
+- name: Verify kube-proxy image is present
+  shell: |
+    "{{ k3s_ctr_bin }}" \
+      --address /run/k3s/containerd/containerd.sock \
+      -n k8s.io images ls | grep -q "{{ kube_proxy_image }}"
+  args:
+    executable: /bin/bash
+  when: kubeproxy_tar.stat.exists
+  register: verify_result
+  failed_when: verify_result.rc != 0
+
+- name: Report kube-proxy preload status
+  debug:
+    msg: "kube-proxy image successfully preloaded into k3s containerd"
+  when: kubeproxy_tar.stat.exists

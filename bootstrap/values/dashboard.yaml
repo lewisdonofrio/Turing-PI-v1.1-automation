@@ -1,0 +1,13 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/bootstrap/values/dashboard.yaml
+# PURPOSE:
+#   Minimal Kubernetes Dashboard config for k3s.
+#   Exposes via NodePort for quick access.
+# =====================================================================
+
+service:
+  type: NodePort
+  nodePort: 30444
+
+metricsScraper:
+  enabled: true

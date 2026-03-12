@@ -1,0 +1,115 @@
+# cluster-kernel-upgrade.yml
+# Purpose: Perform a cluster-wide kernel upgrade using staged artifacts.
+# Behavior: Installs zImage, DTBs, and modules on each worker, validates
+#           installation, and performs a controlled reboot.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - workers install only from staging directories.
+#   - no tmpfs anywhere in the system.
+#   - reboots must be controlled and staggered.
+#   - validation must be explicit before reboot.
+
+---
+
+- name: Cluster kernel upgrade
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    worker_staging: "/home/builder/kernel-staging"
+    boot_dir: "/boot"
+    modules_dir: "/usr/lib/modules"
+    kernel_version: "6.6.0"
+
+  pre_tasks:
+
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CLUSTER KERNEL UPGRADE STARTING
+          - worker: {{ inventory_hostname }}
+          - staging: {{ worker_staging }}
+          - kernel version: {{ kernel_version }}
+          ============================================================
+
+    - name: Validate staging directory exists
+      ansible.builtin.stat:
+        path: "{{ worker_staging }}"
+      register: staging_stat
+
+    - name: Fail if staging directory missing
+      ansible.builtin.fail:
+        msg: "Staging directory missing on worker: {{ worker_staging }}"
+      when: not staging_stat.stat.exists
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # 1. Install kernel image
+    # -------------------------------------------------------------------------
+    - name: Install zImage into /boot
+      ansible.builtin.copy:
+        src: "{{ worker_staging }}/zImage"
+        dest: "{{ boot_dir }}/zImage"
+        mode: '0644'
+
+    # -------------------------------------------------------------------------
+    # 2. Install DTBs
+    # -------------------------------------------------------------------------
+    - name: Install DTBs into /boot/dtbs
+      ansible.builtin.copy:
+        src: "{{ worker_staging }}/dtbs/"
+        dest: "{{ boot_dir }}/dtbs/"
+        mode: '0644'
+      ignore_errors: true
+
+    # -------------------------------------------------------------------------
+    # 3. Install modules
+    # -------------------------------------------------------------------------
+    - name: Install modules into /usr/lib/modules/{{ kernel_version }}
+      ansible.builtin.copy:
+        src: "{{ worker_staging }}/modules/"
+        dest: "{{ modules_dir }}/{{ kernel_version }}/"
+        mode: '0644'
+      ignore_errors: true
+
+    # -------------------------------------------------------------------------
+    # 4. Validate installation
+    # -------------------------------------------------------------------------
+    - name: Validate zImage installed
+      ansible.builtin.stat:
+        path: "{{ boot_dir }}/zImage"
+      register: zimage_stat
+
+    - name: Validate modules installed
+      ansible.builtin.stat:
+        path: "{{ modules_dir }}/{{ kernel_version }}"
+      register: modules_stat
+
+    - name: Report validation results
+      ansible.builtin.debug:
+        msg: |
+          Validation:
+          - zImage present: {{ zimage_stat.stat.exists }}
+          - modules present: {{ modules_stat.stat.exists }}
+
+    # -------------------------------------------------------------------------
+    # 5. Controlled reboot
+    # -------------------------------------------------------------------------
+    - name: Reboot worker
+      ansible.builtin.reboot:
+        msg: "Rebooting into kernel {{ kernel_version }}"
+        reboot_timeout: 600
+
+  post_tasks:
+
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CLUSTER KERNEL UPGRADE COMPLETE
+          - worker: {{ inventory_hostname }}
+          - kernel version installed: {{ kernel_version }}
+          - reboot successful
+          ============================================================

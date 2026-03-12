@@ -1,0 +1,83 @@
+# builder-kernel-deploy.yml
+# Purpose: Deploy kernel artifacts from the builder to worker nodes.
+# Behavior: Copies zImage, DTBs, and modules to deterministic staging
+#           directories on each worker without touching boot partitions.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - builder is the source of truth.
+#   - workers receive artifacts only in staging directories.
+#   - no tmpfs anywhere in the system.
+#   - no direct boot partition writes in this playbook.
+
+---
+
+- name: Deploy kernel artifacts to workers
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    builder_artifacts: "/home/builder/src/kernel-build/artifacts"
+    worker_staging: "/home/builder/kernel-staging"
+
+  pre_tasks:
+
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          KERNEL DEPLOY STARTING
+          - worker: {{ inventory_hostname }}
+          - staging: {{ worker_staging }}
+          ============================================================
+
+    - name: Ensure worker staging directory exists
+      ansible.builtin.file:
+        path: "{{ worker_staging }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+  tasks:
+
+    # -------------------------------------------------------------------------
+    # 1. Deploy zImage
+    # -------------------------------------------------------------------------
+    - name: Copy zImage to worker
+      ansible.builtin.copy:
+        src: "{{ builder_artifacts }}/zImage"
+        dest: "{{ worker_staging }}/zImage"
+        mode: '0644'
+
+    # -------------------------------------------------------------------------
+    # 2. Deploy DTBs
+    # -------------------------------------------------------------------------
+    - name: Copy DTBs to worker
+      ansible.builtin.copy:
+        src: "{{ builder_artifacts }}/dtbs/"
+        dest: "{{ worker_staging }}/dtbs/"
+        mode: '0644'
+      ignore_errors: true
+
+    # -------------------------------------------------------------------------
+    # 3. Deploy modules
+    # -------------------------------------------------------------------------
+    - name: Copy modules to worker
+      ansible.builtin.copy:
+        src: "{{ builder_artifacts }}/modules/"
+        dest: "{{ worker_staging }}/modules/"
+        mode: '0644'
+      ignore_errors: true
+
+  post_tasks:
+
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          KERNEL DEPLOY COMPLETE
+          - zImage delivered
+          - DTBs delivered (if present)
+          - modules delivered
+          - worker staging ready for installation
+          ============================================================

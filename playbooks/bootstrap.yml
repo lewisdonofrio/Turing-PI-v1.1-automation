@@ -1,0 +1,67 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/playbooks/bootstrap.yml
+# PURPOSE:
+#   Day-0 / Day-1 cluster bootstrap.
+#   Installs Helm, Helmfile, prepares namespaces, applies CRDs,
+#   and executes the bootstrap.sh script which installs:
+#     - cert-manager
+#     - ingress-nginx
+#     - ArgoCD (GitOps controller)
+#     - kube-prometheus-stack (monitoring)
+#     - Loki stack (logging)
+#     - Kubernetes Dashboard
+#
+# NOTES:
+#   - ASCII-only, 2AM-safe formatting
+#   - Idempotent: safe to re-run
+#   - No destructive actions
+#   - All automation lives under /opt/ansible-k3s-cluster
+# =====================================================================
+
+- name: Bootstrap k3s control-plane with Helmfile stack
+  hosts: master
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    # ---------------------------------------------------------------
+    # Ensure Helm is installed
+    # ---------------------------------------------------------------
+    - name: Install Helm if missing
+      shell: |
+        if ! command -v helm >/dev/null 2>&1; then
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        fi
+      args:
+        warn: false
+
+    # ---------------------------------------------------------------
+    # Ensure Helmfile is installed
+    # ---------------------------------------------------------------
+    - name: Install Helmfile if missing
+      shell: |
+        if ! command -v helmfile >/dev/null 2>&1; then
+          curl -L https://github.com/helmfile/helmfile/releases/latest/download/helmfile_$(uname -s)_$(uname -m) \
+            -o /usr/local/bin/helmfile
+          chmod +x /usr/local/bin/helmfile
+        fi
+      args:
+        warn: false
+
+    # ---------------------------------------------------------------
+    # Ensure bootstrap.sh exists and is executable
+    # ---------------------------------------------------------------
+    - name: Ensure bootstrap.sh is executable
+      file:
+        path: /opt/ansible-k3s-cluster/bootstrap/bootstrap.sh
+        mode: '0755'
+        state: file
+
+    # ---------------------------------------------------------------
+    # Run the bootstrap script
+    # ---------------------------------------------------------------
+    - name: Execute bootstrap.sh (installs core addons)
+      shell: ./bootstrap.sh
+      args:
+        chdir: /opt/ansible-k3s-cluster/bootstrap

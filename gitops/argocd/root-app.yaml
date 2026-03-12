@@ -1,0 +1,49 @@
+# =====================================================================
+# FILE: /opt/ansible-k3s-cluster/gitops/argocd/root-app.yaml
+# PURPOSE:
+#   Root ArgoCD "App-of-Apps" manifest.
+#   This is the single application ArgoCD syncs after bootstrap.
+#   It recursively deploys all cluster applications defined under:
+#       /opt/ansible-k3s-cluster/gitops/apps/
+#
+#   This file hands control of the cluster to GitOps.
+#
+# NOTES:
+#   - ASCII-only, 2AM-safe formatting
+#   - ArgoCD must already be installed by Helmfile
+#   - This manifest is applied ONCE after bootstrap
+#   - After that, ArgoCD continuously reconciles the cluster
+# =====================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+spec:
+  project: default
+
+  # ------------------------------------------------------------------
+  # Source: This Git repository becomes the source of truth.
+  # ------------------------------------------------------------------
+  source:
+    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
+    targetRevision: main
+    path: gitops/apps
+
+  # ------------------------------------------------------------------
+  # Destination: Always the in-cluster Kubernetes API.
+  # ------------------------------------------------------------------
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  # ------------------------------------------------------------------
+  # Sync Policy: Automated, self-healing, namespace creation enabled.
+  # ------------------------------------------------------------------
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

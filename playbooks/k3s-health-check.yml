@@ -1,0 +1,38 @@
+---
+- name: Kubernetes cluster health check
+  hosts: master
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check node status
+      command: kubectl get nodes -o wide
+      register: nodes
+    - debug:
+        msg: "{{ nodes.stdout_lines }}"
+
+    - name: Check system pods
+      command: kubectl get pods -A -o wide
+      register: pods
+    - debug:
+        msg: "{{ pods.stdout_lines }}"
+
+    - name: Check API health (readyz)
+      command: kubectl get --raw='/readyz?verbose=1'
+      register: readyz
+    - debug:
+        msg: "{{ readyz.stdout_lines }}"
+
+    - name: Check API health (livez)
+      command: kubectl get --raw='/livez?verbose=1'
+      register: livez
+    - debug:
+        msg: "{{ livez.stdout_lines }}"
+
+    - name: Check CNI pods
+      command: kubectl -n kube-system get pods -l k8s-app=flannel -o wide
+      register: cni
+      ignore_errors: true
+    - debug:
+        msg: "{{ cni.stdout_lines }}"

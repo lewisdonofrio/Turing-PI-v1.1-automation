@@ -7,6 +7,7 @@
   vars:
     reboot_triggers:
       - linux
+      - linux-rpi
       - glibc
       - systemd
       - mkinitcpio
@@ -19,17 +20,50 @@
     - name: Perform full system upgrade
       command: pacman -Syu --noconfirm
       register: upgrade_result
-      changed_when: "'upgraded' in upgrade_result.stdout or 'installed' in upgrade_result.stdout"
+      changed_when: "'upgrading' in upgrade_result.stdout or 'upgrading' in upgrade_result.stderr"
 
-    - name: Mark node as updated or unchanged
+    - name: Capture list of upgraded packages
       set_fact:
-        update_status: >-
-          {{ 'UPDATED' if (upgrade_result.stdout is search('upgraded|installed')) else 'NO-CHANGE' }}
+        upgraded_packages: >-
+          {{ upgrade_result.stdout_lines
+             | select('search', 'upgrading')
+             | list }}
 
-    - name: Decide if reboot is required
+    - name: Detect active iptables backend
+      shell: |
+        iptables --version | grep -q "nf_tables" && echo nft || echo legacy
+      register: ipt_backend
+      changed_when: false
+
+    - name: Detect iproute2 dependency binding
+      shell: |
+        if pacman -Qi iproute2 2>/dev/null | grep -q 'libxtables.so=12-32'; then
+          echo "nft-locked"
+        else
+          echo "flexible"
+        fi
+      register: ipt_lock
+      changed_when: false
+
+    - name: Print iptables backend sanity summary
+      debug:
+        msg: |
+          === Iptables Backend Sanity for {{ inventory_hostname }} ===
+
+          Active Backend: {{ ipt_backend.stdout }}
+
+          Interpretation:
+            - legacy      = using legacy xtables backend
+            - nft         = using nf_tables backend (modern)
+          Dependency Lock: {{ ipt_lock.stdout }}
+
+    - name: Determine if reboot is required
       set_fact:
         reboot_required: >-
-          {{ reboot_triggers | select('in', upgrade_result.stdout) | list | length > 0 }}
+          {{ upgraded_packages
+             | select('search', reboot_triggers | join('|'))
+             | list
+             | length > 0 }}
 
     - name: Reboot if kernel or core packages changed
       reboot:
@@ -39,5 +73,6 @@
       add_host:
         name: "{{ inventory_hostname }}"
         groups: update_summary
-        update_status: "{{ update_status }}"
+        update_status: "{{ 'UPDATED' if upgraded_packages|length > 0 else 'NO-CHANGE' }}"
         reboot_required: "{{ reboot_required }}"
+        upgraded_packages: "{{ upgraded_packages }}"

@@ -1,0 +1,65 @@
+# roles/kernel_build/tasks/configure.yml
+# Purpose: Configure the kernel build using a deterministic defconfig workflow.
+# Behavior: Installs defconfig, runs olddefconfig, and validates .config.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - configuration must be deterministic.
+#   - .config must always be explicitly created.
+#   - no tmpfs anywhere in the system.
+
+---
+
+# =============================================================================
+# 1. Install defconfig
+# =============================================================================
+- name: Install kernel defconfig
+  ansible.builtin.copy:
+    src: "files/{{ kernel_defconfig }}"
+    dest: "/home/builder/src/kernel-build/linux/.config"
+    owner: builder
+    group: builder
+    mode: '0644'
+
+- name: Report defconfig installation
+  ansible.builtin.debug:
+    msg: "Defconfig installed: {{ kernel_defconfig }}"
+
+# =============================================================================
+# 2. Run olddefconfig
+# =============================================================================
+- name: Run olddefconfig to finalize configuration
+  ansible.builtin.shell: make olddefconfig
+  args:
+    chdir: "/home/builder/src/kernel-build/linux"
+  register: olddefconfig_out
+  changed_when: false
+
+- name: Report olddefconfig output
+  ansible.builtin.debug:
+    msg: "{{ olddefconfig_out.stdout_lines | default(['no output']) }}"
+
+# =============================================================================
+# 3. Validate .config
+# =============================================================================
+- name: Validate .config exists
+  ansible.builtin.stat:
+    path: "/home/builder/src/kernel-build/linux/.config"
+  register: config_stat
+
+- name: Report .config status
+  ansible.builtin.debug:
+    msg: ".config present: {{ config_stat.stat.exists }}"
+
+# =============================================================================
+# 4. Configuration stage summary
+# =============================================================================
+- name: Configuration stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      CONFIGURATION STAGE COMPLETE
+      - defconfig installed
+      - olddefconfig executed
+      - .config validated
+      ------------------------------------------------------------

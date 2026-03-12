@@ -1,0 +1,49 @@
+---
+# 04-install-agent.yml
+# Install and start the k3s-agent on a fully prepared worker.
+
+# ------------------------------------------------------------
+# 1. Fetch token from kubenode1
+# ------------------------------------------------------------
+- name: Fetch k3s token from master
+  delegate_to: kubenode1
+  become: yes
+  slurp:
+    src: "/var/lib/rancher/k3s/server/node-token"
+  register: k3s_token_raw
+
+- name: Set k3s token fact
+  set_fact:
+    k3s_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+
+# ------------------------------------------------------------
+# 2. Install k3s-agent
+# ------------------------------------------------------------
+- name: Install k3s-agent (binary + service)
+  shell: |
+    curl -sfL https://get.k3s.io \
+      | INSTALL_K3S_EXEC="agent --server https://kubenode1:6443 --token {{ k3s_token }}" \
+        sh -s -
+  args:
+    creates: /usr/local/bin/k3s-agent
+
+# ------------------------------------------------------------
+# 3. Enable + start agent
+# ------------------------------------------------------------
+- name: Ensure k3s-agent service is enabled and started
+  service:
+    name: k3s-agent
+    state: started
+    enabled: yes
+
+# ------------------------------------------------------------
+# 4. Wait for node to register and become Ready
+# ------------------------------------------------------------
+- name: Wait for node to register and be Ready
+  delegate_to: kubenode1
+  command: >
+    kubectl get node {{ inventory_hostname }} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+  register: node_ready_check
+  retries: 30
+  delay: 5
+  until: node_ready_check.stdout == "True"

@@ -1,0 +1,144 @@
+---
+# /opt/ansible-k3s-cluster/playbooks/devops-nfs-storage.yml
+# Purpose: Install NFS External Provisioner for dynamic RWX storage.
+# Doctrine:
+#   - Use existing NFS export: /mnt/storage/kubedata
+#   - Lightweight, ARM-friendly, CM3+ safe
+#   - No tmpfs anywhere
+
+###############################################################################
+# 1. Create namespace
+###############################################################################
+
+- name: Create nfs-storage namespace
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply namespace
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: nfs-storage
+      changed_when: false
+
+###############################################################################
+# 2. Deploy NFS External Provisioner
+###############################################################################
+
+- name: Deploy NFS provisioner
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  vars:
+    nfs_server: "kubenode1.home.lab"
+    nfs_path: "/mnt/storage/kubedata"
+
+  tasks:
+    - name: Apply NFS provisioner deployment
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nfs-client-provisioner
+            namespace: nfs-storage
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: nfs-client-provisioner
+            template:
+              metadata:
+                labels:
+                  app: nfs-client-provisioner
+              spec:
+                containers:
+                  - name: nfs-client-provisioner
+                    image: registry.k8s.io/sig-storage/nfs-subdir-external-provisioner:v4.0.2
+                    env:
+                      - name: PROVISIONER_NAME
+                        value: cluster.local/nfs-client
+                      - name: NFS_SERVER
+                        value: "{{ nfs_server }}"
+                      - name: NFS_PATH
+                        value: "{{ nfs_path }}"
+                    volumeMounts:
+                      - name: nfs-client-root
+                        mountPath: /persistentvolumes
+                volumes:
+                  - name: nfs-client-root
+                    nfs:
+                      server: "{{ nfs_server }}"
+                      path: "{{ nfs_path }}"
+      changed_when: false
+
+###############################################################################
+# 3. Create NFS StorageClass
+###############################################################################
+
+- name: Create NFS StorageClass
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Apply StorageClass
+      ansible.builtin.command: kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: nfs-client
+          provisioner: cluster.local/nfs-client
+          parameters:
+            archiveOnDelete: "false"
+          reclaimPolicy: Delete
+          volumeBindingMode: Immediate
+      changed_when: false
+
+###############################################################################
+# 4. Validate NFS provisioner
+###############################################################################
+
+- name: Validate NFS provisioner is ready
+  hosts: builder
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Wait for deployment to be ready
+      ansible.builtin.command: >
+        kubectl -n nfs-storage get deploy nfs-client-provisioner -o jsonpath='{.status.readyReplicas}'
+      register: nfs_ready
+      retries: 30
+      delay: 5
+      until: nfs_ready.stdout == "1"
+      changed_when: false
+
+###############################################################################
+# 5. Final banner
+###############################################################################
+
+- name: Report NFS storage ready
+  hosts: builder
+  gather_facts: false
+
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          NFS STORAGE READY
+          - Provisioner: nfs-client
+          - Namespace: nfs-storage
+          - Dynamic RWX PVCs enabled
+          Cluster is now ready for Gitea, registry, runners,
+          monitoring, logging, and all persistent workloads.
+          ============================================================

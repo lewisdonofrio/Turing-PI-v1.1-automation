@@ -1,0 +1,10 @@
+flannel-backend: vxlan
+kube-proxy-arg:
+  - proxy-mode=iptables
+  - iptables-min-sync-period=1s
+  - iptables-sync-period=1s
+node-ip: 192.168.29.212
+tls-san:
+  - 192.168.29.212
+  - kubenode1
+write-kubeconfig-mode: "0644"

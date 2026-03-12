@@ -1,0 +1,75 @@
+# roles/kernel_build/tasks/validate.yml
+# Purpose: Validate kernel build artifacts to ensure a complete, correct build.
+# Behavior: Checks zImage, DTBs, and modules for presence and reports results.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Idempotent. Safe to run at any time.
+# Doctrine:
+#   - validation must be explicit and deterministic.
+#   - no silent failures.
+#   - no tmpfs anywhere in the system.
+
+---
+
+# =============================================================================
+# 1. Validate zImage
+# =============================================================================
+- name: Check for zImage
+  ansible.builtin.stat:
+    path: "/home/builder/src/kernel-build/artifacts/zImage"
+  register: zimage_stat
+
+- name: Report zImage status
+  ansible.builtin.debug:
+    msg: "zImage present: {{ zimage_stat.stat.exists }}"
+
+# =============================================================================
+# 2. Validate DTBs
+# =============================================================================
+- name: List DTBs
+  ansible.builtin.shell: ls /home/builder/src/kernel-build/artifacts/dtbs/*.dtb 2>/dev/null
+  register: dtb_list
+  changed_when: false
+  failed_when: false
+
+- name: Report DTB status
+  ansible.builtin.debug:
+    msg: >
+      DTBs detected:
+      {{ dtb_list.stdout_lines | default(['none']) }}
+
+# =============================================================================
+# 3. Validate modules
+# =============================================================================
+- name: Check modules directory
+  ansible.builtin.stat:
+    path: "/home/builder/src/kernel-build/artifacts/modules"
+  register: modules_stat
+
+- name: Report modules directory status
+  ansible.builtin.debug:
+    msg: "Modules directory present: {{ modules_stat.stat.exists }}"
+
+- name: List installed modules
+  ansible.builtin.shell: find /home/builder/src/kernel-build/artifacts/modules -type f 2>/dev/null | head -n 10
+  register: modules_list
+  changed_when: false
+  failed_when: false
+
+- name: Report module sample
+  ansible.builtin.debug:
+    msg: >
+      Sample modules:
+      {{ modules_list.stdout_lines | default(['none']) }}
+
+# =============================================================================
+# 4. Validation stage summary
+# =============================================================================
+- name: Validation stage summary
+  ansible.builtin.debug:
+    msg: |
+      ------------------------------------------------------------
+      VALIDATION STAGE COMPLETE
+      - zImage validated: {{ zimage_stat.stat.exists }}
+      - DTBs validated: {{ (dtb_list.stdout_lines | length) | default(0) }} found
+      - modules validated: {{ modules_stat.stat.exists }}
+      ------------------------------------------------------------

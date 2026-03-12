@@ -1,0 +1,173 @@
+---
+- name: K3s Worker Control
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    # Default delay if not defined in inventory
+    agent_delay: 30
+
+  tasks:
+
+    - name: Show selected worker and delay
+      debug:
+        msg: "Controlling {{ inventory_hostname }} with agent_delay={{ agent_delay }} seconds"
+
+    ###########################################################################
+    # STATUS (query service state)
+    ###########################################################################
+    - name: Query k3s-agent status
+      when: action == "status"
+      command: systemctl is-active k3s-agent
+      register: agent_state
+      ignore_errors: true
+
+    - name: Query k3s-agent enabled/disabled
+      when: action == "status"
+      command: systemctl is-enabled k3s-agent
+      register: agent_enabled
+      ignore_errors: true
+
+    - name: Report k3s-agent status
+      when: action == "status"
+      debug:
+        msg: >
+          Worker {{ inventory_hostname }} k3s-agent:
+          state={{ agent_state.stdout | default('unknown') }}
+          enabled={{ agent_enabled.stdout | default('unknown') }}
+
+    ###########################################################################
+    # ENSURE SYSTEMD DROP-IN FOR DELAY EXISTS AND IS CORRECT
+    ###########################################################################
+    - name: Ensure k3s-agent systemd drop-in directory exists
+      file:
+        path: /etc/systemd/system/k3s-agent.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install k3s-agent delay drop-in
+      copy:
+        dest: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [Service]
+          ExecStartPre=/bin/sleep {{ agent_delay }}
+          TimeoutStartSec={{ agent_delay | int + 300 }}
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reload
+
+    ###########################################################################
+    # DRAIN (safe eviction)
+    ###########################################################################
+    - name: Drain node (evict pods safely)
+      when: action in ["drain", "drain_before_disable"]
+      delegate_to: master
+      run_once: false
+      command: >
+        kubectl drain {{ inventory_hostname }}
+        --ignore-daemonsets
+        --delete-emptydir-data
+        --force
+      register: drain_result
+      retries: 5
+      delay: 5
+      until: drain_result.rc == 0
+
+    ###########################################################################
+    # STOP
+    ###########################################################################
+    - name: Stop k3s-agent
+      when: action == "stop"
+      systemd:
+        name: k3s-agent
+        state: stopped
+        enabled: true
+
+    ###########################################################################
+    # START
+    ###########################################################################
+    - name: Start k3s-agent
+      when: action == "start"
+      systemd:
+        name: k3s-agent
+        state: started
+        enabled: true
+
+    ###########################################################################
+    # RESTART
+    ###########################################################################
+    - name: Restart k3s-agent
+      when: action == "restart"
+      systemd:
+        name: k3s-agent
+        state: restarted
+        enabled: true
+
+    ###########################################################################
+    # DISABLE (stop + disable)
+    ###########################################################################
+    - name: Disable k3s-agent (stop + disable)
+      when: action in ["disable", "drain_before_disable"]
+      systemd:
+        name: k3s-agent
+        state: stopped
+        enabled: false
+
+    ###########################################################################
+    # ENABLE (enable only, do not start)
+    ###########################################################################
+    - name: Enable k3s-agent (enable only, do not start)
+      when: action == "enable"
+      systemd:
+        name: k3s-agent
+        enabled: true
+        state: stopped
+
+    ###########################################################################
+    # DELAY BEFORE JOIN
+    ###########################################################################
+    - name: Wait for agent_delay before node registration
+      when: action in ["start", "restart"]
+      pause:
+        seconds: "{{ agent_delay }}"
+
+    ###########################################################################
+    # WAIT FOR NODE APPEARANCE
+    ###########################################################################
+    - name: Wait for node to appear in Kubernetes
+      when: action in ["start", "restart"]
+      delegate_to: master
+      run_once: false
+      command: kubectl get node {{ inventory_hostname }}
+      register: node_check
+      retries: 30
+      delay: 5
+      until: node_check.rc == 0
+
+    ###########################################################################
+    # WAIT FOR NODE READY
+    ###########################################################################
+    - name: Wait for node to become Ready
+      when: action in ["start", "restart"]
+      delegate_to: master
+      run_once: false
+      command: >
+        kubectl get node {{ inventory_hostname }}
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: ready_check
+      retries: 30
+      delay: 5
+      until: ready_check.stdout == "True"
+
+    ###########################################################################
+    # FINAL STATUS
+    ###########################################################################
+    - name: Report final status
+      debug:
+        msg: "Worker {{ inventory_hostname }} action '{{ action }}' completed"

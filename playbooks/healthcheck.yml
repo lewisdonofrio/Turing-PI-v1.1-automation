@@ -1,46 +1,75 @@
 ---
 # /opt/ansible-k3s-cluster/playbooks/healthcheck.yml
-# Cluster-wide health verification.
-# Checks SSH, uptime, load, memory, tmpfs, distccd, and k3s state.
+# Purpose: Cluster-wide health verification.
+# Behavior: Checks uptime, load, memory, distccd, and k3s state.
+# Doctrine: tmpfs is no longer used anywhere in the system.
+# Notes: ASCII-only, idempotent, safe to run at 2am.
 
 - hosts: all
-  gather_facts: yes
+  gather_facts: false
   become: yes
   tasks:
 
-    - name: HEALTHCHECK | Report hostname and uptime
-      shell: uptime
-      register: uptime_out
+    # -----------------------------------------------------------
+    # Basic system health
+    # -----------------------------------------------------------
 
-    - debug:
+    - name: HEALTHCHECK | Report uptime
+      ansible.builtin.command: uptime
+      register: uptime_out
+      failed_when: false
+      changed_when: false
+
+    - ansible.builtin.debug:
         msg: "{{ inventory_hostname }} uptime: {{ uptime_out.stdout }}"
 
     - name: HEALTHCHECK | Check free memory
-      shell: free -h
+      ansible.builtin.command: free -h
       register: mem_out
+      failed_when: false
+      changed_when: false
 
-    - debug:
+    - ansible.builtin.debug:
         msg: "{{ inventory_hostname }} memory: {{ mem_out.stdout }}"
 
-    - name: HEALTHCHECK | Check tmpfs mount
-      shell: mount | grep kernelbuild || true
-      register: tmpfs_out
-
-    - debug:
-        msg: "{{ inventory_hostname }} tmpfs: {{ tmpfs_out.stdout }}"
+    # -----------------------------------------------------------
+    # Service health
+    # -----------------------------------------------------------
 
     - name: HEALTHCHECK | Check distccd state
-      shell: systemctl is-active distccd || true
+      ansible.builtin.command: systemctl is-active distccd
       register: distccd_state
+      failed_when: false
+      changed_when: false
 
-    - debug:
+    - ansible.builtin.debug:
         msg: "{{ inventory_hostname }} distccd: {{ distccd_state.stdout }}"
 
     - name: HEALTHCHECK | Check k3s/k3s-agent state
-      shell: |
+      ansible.builtin.command: |
         systemctl is-active k3s 2>/dev/null || true
         systemctl is-active k3s-agent 2>/dev/null || true
       register: k3s_state
+      failed_when: false
+      changed_when: false
 
-    - debug:
+    - ansible.builtin.debug:
         msg: "{{ inventory_hostname }} k3s: {{ k3s_state.stdout }}"
+
+# ---------------------------------------------------------------
+# Final summary banner (builder only)
+# ---------------------------------------------------------------
+
+- hosts: builder
+  gather_facts: false
+  tasks:
+    - ansible.builtin.debug:
+        msg: |
+          ============================================================
+          CLUSTER HEALTHCHECK COMPLETE
+          - uptime, load, memory collected from all nodes
+          - distccd state verified everywhere
+          - k3s-server checked on builder
+          - k3s-agent checked on workers
+          - tmpfs logic removed (doctrine-compliant)
+          ============================================================

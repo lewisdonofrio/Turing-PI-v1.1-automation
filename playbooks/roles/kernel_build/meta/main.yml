@@ -1,0 +1,34 @@
+# roles/kernel_build/meta/main.yml
+# Purpose: Define metadata for the kernel_build role.
+# Behavior: Documents author, supported platforms, and role dependencies.
+# Author: Lewis Donofrio
+# Notes: ASCII-only. Minimal by design.
+# Doctrine:
+#   - meta/ contains documentation, not logic.
+#   - dependencies must be explicit (none for this role).
+#   - no tmpfs anywhere in the system.
+
+---
+
+galaxy_info:
+  author: "Lewis Donofrio"
+  description: "Deterministic, doctrine-aligned kernel build pipeline for CM3+ workers."
+  company: "N/A"
+  license: "MIT"
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: ArchLinux
+      versions:
+        - all
+
+  galaxy_tags:
+    - kernel
+    - build
+    - distcc
+    - raspberrypi
+    - cm3
+    - doctrine
+    - reproducible
+
+dependencies: []

@@ -4,15 +4,15 @@
 #  /home/builder/scripts/kernel-artifact-organizer.sh
 #
 #  Purpose:
-#    Collect and organize kernel build artifacts into a structured,
+#    Collect and organize all kernel build artifacts into a structured,
 #    timestamped directory under /home/builder/artifacts/kernel/.
-#    This includes zImage, dtbs, modules, System.map, and logs.
+#    This includes zImage, Image, vmlinux, dtbs, overlays, modules,
+#    System.map, .config, Module.symvers, and logs.
 #
 #  Notes:
 #    - ASCII-only, nano-safe, deterministic.
-#    - No tabs, no Unicode, no timestamps inside the script.
 #    - Must be run as builder on kubenode1.
-#    - Assumes kernel-build.sh and kernel-package.sh have completed.
+#    - Assumes kernel-build.sh and modules_install have completed.
 # =====================================================================
 
 set -euo pipefail
@@ -32,12 +32,18 @@ if [ "$(hostname)" != "kubenode1" ]; then
 fi
 
 SRC="/home/builder/src/kernel"
+STAGE="/home/builder/kernel-out"
 LOGDIR="/home/builder/build-logs"
 PKGOUT="/home/builder/pkgout"
 ARTBASE="/home/builder/artifacts/kernel"
 
 if [ ! -d "$SRC" ]; then
     echo "ERROR: Kernel source directory not found: $SRC"
+    exit 1
+fi
+
+if [ ! -d "$STAGE" ]; then
+    echo "ERROR: Staging directory not found: $STAGE"
     exit 1
 fi
 
@@ -55,30 +61,45 @@ mkdir -p "$ARTDIR"
 echo "Creating artifact directory: $ARTDIR"
 
 # ---------------------------------------------------------------------
-#  Copy kernel image and related files
+#  Copy kernel images and metadata
 # ---------------------------------------------------------------------
 
-echo "Copying kernel image and metadata..."
+echo "Copying kernel images and metadata..."
 
 cp "$SRC/arch/arm/boot/zImage" "$ARTDIR/" 2>/dev/null || echo "zImage not found"
+cp "$SRC/arch/arm/boot/Image" "$ARTDIR/" 2>/dev/null || echo "Image not found"
+cp "$SRC/vmlinux" "$ARTDIR/" 2>/dev/null || echo "vmlinux not found"
 cp "$SRC/System.map" "$ARTDIR/" 2>/dev/null || echo "System.map not found"
+cp "$SRC/.config" "$ARTDIR/" 2>/dev/null || echo ".config not found"
+cp "$SRC/Module.symvers" "$ARTDIR/" 2>/dev/null || echo "Module.symvers not found"
+cp "$SRC/modules.builtin" "$ARTDIR/" 2>/dev/null || echo "modules.builtin not found"
+cp "$SRC/modules.builtin.modinfo" "$ARTDIR/" 2>/dev/null || echo "modules.builtin.modinfo not found"
 
 # ---------------------------------------------------------------------
-#  Copy dtbs
+#  Copy dtbs and overlays
 # ---------------------------------------------------------------------
 
 if [ -d "$SRC/arch/arm/boot/dts" ]; then
     mkdir -p "$ARTDIR/dtbs"
     cp "$SRC/arch/arm/boot/dts/"*.dtb "$ARTDIR/dtbs/" 2>/dev/null || true
+
+    if [ -d "$SRC/arch/arm/boot/dts/overlays" ]; then
+        mkdir -p "$ARTDIR/dtbs/overlays"
+        cp "$SRC/arch/arm/boot/dts/overlays/"*.dtbo "$ARTDIR/dtbs/overlays/" 2>/dev/null || true
+    fi
 fi
 
 # ---------------------------------------------------------------------
-#  Copy modules
+#  Copy modules from staging directory
 # ---------------------------------------------------------------------
 
-if [ -d "$SRC/modules" ]; then
+MODDIR="$STAGE/lib/modules"
+
+if [ -d "$MODDIR" ]; then
     mkdir -p "$ARTDIR/modules"
-    cp -r "$SRC/modules" "$ARTDIR/" 2>/dev/null || true
+    cp -r "$MODDIR" "$ARTDIR/modules/" 2>/dev/null || true
+else
+    echo "WARNING: No modules found in staging directory"
 fi
 
 # ---------------------------------------------------------------------

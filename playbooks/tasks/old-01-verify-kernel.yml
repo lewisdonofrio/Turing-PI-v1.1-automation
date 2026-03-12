@@ -1,0 +1,75 @@
+---
+# 01-verify-kernel.yml
+# Ensure kernel, modules, sysctls, and cgroups match kubenode7 baseline
+
+# -----------------------------
+# Verify kernel command line
+# -----------------------------
+- name: Read kernel cmdline
+  command: cat /boot/cmdline.txt
+  register: cmdline
+  failed_when: false
+
+- name: Assert required kernel flags
+  assert:
+    that:
+      - cmdline.stdout != ""
+      - "'cgroup_enable=memory' in cmdline.stdout"
+      - "'cgroup_memory=1' in cmdline.stdout"
+      - "'cgroup_enable=cpuset' in cmdline.stdout"
+      - "'systemd.unified_cgroup_hierarchy=0' in cmdline.stdout"
+    fail_msg: "Kernel cmdline missing required cgroup flags or cmdline.txt not found"
+
+# -----------------------------
+# Verify required kernel modules
+# -----------------------------
+- name: Check required kernel modules
+  shell: |
+    missing=""
+    for m in br_netfilter overlay vxlan ip_tables iptable_nat nf_conntrack; do
+      lsmod | grep -q "$m" || missing="$missing $m"
+    done
+    echo "$missing"
+  register: missing_modules
+
+- name: Fail if kernel modules missing
+  assert:
+    that:
+      - missing_modules.stdout == ""
+    fail_msg: "Missing required kernel modules: {{ missing_modules.stdout }}"
+
+# -----------------------------
+# Verify sysctl settings
+# -----------------------------
+- name: Check sysctl settings
+  shell: |
+    sysctl net.bridge.bridge-nf-call-iptables net.ipv4.ip_forward net.ipv6.conf.all.forwarding
+  register: sysctl_out
+
+- name: Assert sysctl values
+  assert:
+    that:
+      - "'net.bridge.bridge-nf-call-iptables = 1' in sysctl_out.stdout"
+      - "'net.ipv4.ip_forward = 1' in sysctl_out.stdout"
+      - "'net.ipv6.conf.all.forwarding = 1' in sysctl_out.stdout"
+    fail_msg: "Sysctl settings not aligned with kubenode7 baseline"
+
+# -----------------------------
+# Verify cgroup filesystem
+# -----------------------------
+- name: Assert cgroup filesystem layout
+  assert:
+    that:
+      - ansible_facts.mounts | selectattr('mount', 'equalto', '/sys/fs/cgroup/memory') | list | length > 0
+      - ansible_facts.mounts | selectattr('mount', 'equalto', '/sys/fs/cgroup/cpuset') | list | length > 0
+      - ansible_facts.mounts | selectattr('mount', 'equalto', '/sys/fs/cgroup/systemd') | list | length > 0
+    fail_msg: "Cgroup filesystem layout incorrect"
+
+# -----------------------------
+# Verify kernel version
+# -----------------------------
+- name: Assert kernel version matches baseline
+  assert:
+    that:
+      - ansible_kernel is version('6.1', '>=')
+    fail_msg: "Kernel version too old for k3s worker baseline"

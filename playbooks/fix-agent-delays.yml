@@ -1,0 +1,36 @@
+---
+- name: Fix k3s-agent startup delays based on inventory
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Validate agent_delay is defined
+      assert:
+        that:
+          - agent_delay is defined
+        fail_msg: "agent_delay is not defined for {{ inventory_hostname }}"
+
+    - name: Ensure drop-in directory exists
+      file:
+        path: /etc/systemd/system/k3s-agent.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install correct delay drop-in
+      copy:
+        dest: /etc/systemd/system/k3s-agent.service.d/10-delay.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Service]
+          ExecStartPre=/bin/sleep {{ agent_delay }}
+      notify: Reload systemd
+
+  handlers:
+    - name: Reload systemd
+      command: systemctl daemon-reload
