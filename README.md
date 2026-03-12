@@ -1,293 +1,91 @@
-# =============================================================================
-# File: /opt/ansible-k3s-cluster/README.md
-# =============================================================================
-# Turing PI v1.1 - Full Cluster Automation
-# Distributed Kernel Build - DistCC - Mode-Based Operations - Reproducible Infrastructure
-# =============================================================================
-
-This repository contains the complete automation framework for a Raspberry Pi
-CM3+/CM4 based Turing PI v1.1 cluster. It is engineered for reproducibility,
-auditability, multi-user collaboration, and long-term maintainability.
-
-The system implements:
-
-- Distributed kernel compilation using distcc
-- Mode-based operation (K3S MODE vs DISTCC BUILD MODE)
-- Strict builder/worker separation of duties
-- Self-documenting file headers
-- FHS-compliant directory placement
-- Multi-user access via the "clusterops" group
-- Verification and smoketest playbooks
-- Deterministic, reproducible infrastructure
-
-This repo is built to be readable, predictable, and future-proof.
-
-# =============================================================================
-# DIRECTORY STRUCTURE
-# =============================================================================
-
-Pure ASCII layout for readability in nano, vim, less, and minimal terminals.
-
-    /opt/ansible-k3s-cluster/
-    |
-    +-- inventory/
-    |   +-- hosts
-    |   +-- group_vars/
-    |       +-- all.yml
-    |       +-- build.yml
-    |       +-- workers.yml
-    |
-    +-- manifest/
-    |   +-- distcc-hosts.yml
-    |
-    +-- playbooks/
-    |   |
-    |   +-- distccd-bootstrap.yml
-    |   +-- builder-distccd-guard.yml
-    |   +-- worker-distccd-reset.yml
-    |   +-- cluster-distcc-validate.yml
-    |   +-- cluster-distcc-smoketest.yml
-    |   +-- distcc-mode-switch.yml
-    |   +-- cluster-mode-restore.yml
-    |   |
-    |   +-- k3s-bootstrap.yml
-    |   +-- k3s-reset.yml
-    |   +-- k3s-validate.yml
-    |
-    +-- roles/
-    |   +-- builder_user/
-    |   +-- distcc_manage/
-    |   +-- kernel_build/
-    |   +-- kernel_collect/
-    |   +-- kernel_deploy/
-    |   +-- kernel_reboot/
-    |   +-- kernel_verify/
-    |
-    +-- artifacts/
-    |   +-- (built kernel packages land here)
-    |
-    +-- site.yml
-    +-- verify_builder.yml
-    +-- verify_kernel.yml
-
-# =============================================================================
-# DESIGN PRINCIPLES
-# =============================================================================
-
-This automation system is intentionally engineered around clarity, reproducibility,
-and operational discipline.
-
-# -----------------------------------------------------------------------------
-# 1. Why /opt/ansible-k3s-cluster?
-# -----------------------------------------------------------------------------
-
-- Correct FHS location for add-on cluster software
-- Not tied to any user's home directory
-- Safe for multi-user access
-- Easy to back up or mount read-only
-- Clean separation from system files
-
-Ownership model:
-
-    owner: builder
-    group: clusterops
-    permissions: 2775
-
-Ensures:
-
-- builder owns the repo
-- all automation-related users can collaborate
-- new files inherit correct group
-
-# -----------------------------------------------------------------------------
-# 2. Why Mode-Based Operation?
-# -----------------------------------------------------------------------------
+![Turing-PI Cluster](media/IMG_3522.jpeg)
 
-The cluster has two operational states:
+# Turing‑PI v1.1 Automation
 
-# --- DISTCC BUILD MODE -------------------------------------------------------
+## A Fully Automated, Reproducible k3s Cluster Build for CM3+ Nodes
 
-Used when compiling a new kernel.
+This repository provides a complete, automated build system for running a multi‑node k3s cluster on the Turing‑PI v1.1 using Raspberry Pi Compute Module 3+ boards. While the project includes optional support for distcc‑accelerated builds, the primary goal is much broader: to deliver a repeatable, infrastructure‑as‑code workflow that provisions, configures, validates, and maintains an entire ARM-based cluster from bare metal to a functioning Kubernetes environment.
 
-- builder mounts tmpfs at /tmp/kernel-build
-- builder runs distcc client only
-- workers run distccd
-- workers provide remote cc1 execution
-- override.conf enforced on workers
-- symlinks in /usr/lib/distcc enforced
-- distributed compile via distcc
-- final packaging on builder only
+---
 
-# --- K3S MODE ----------------------------------------------------------------
+## What This Project Actually Does
 
-Used during normal cluster operation.
+A high‑level overview of the cluster automation:
 
-- k3s-server active on builder
-- k3s-agent active on workers
-- distccd stopped everywhere
-- tmpfs unmounted on builder
-- maximum RAM returned to workloads
+### 1. Base OS Provisioning
 
-This separation ensures:
+- Automated deployment of Arch Linux ARM to each CM3+ node
+- Consistent filesystem layout, SSH configuration, and baseline packages
+- Deterministic, reproducible node images for rapid rebuilds
 
-- maximum performance during builds
-- maximum RAM for k3s during runtime
-- predictable cluster state
+### 2. Cluster Bootstrapping
 
-# -----------------------------------------------------------------------------
-# 3. Why Distributed Builds?
-# -----------------------------------------------------------------------------
+- Automated node discovery and inventory generation
+- Role‑based configuration (control-plane, workers, builders, utility nodes)
+- Network configuration tailored for the Turing‑PI backplane
 
-All workers participate:
+### 3. k3s Installation and Configuration
 
-- distccd on workers
-- distcc client on builder
-- consistent gcc toolchain
-- override.conf ensures correct distccd behavior
-- symlinks ensure correct compiler invocation
+- Automated installation of k3s across all nodes
+- Control-plane initialization and token distribution
+- Worker node join automation
+- Optional CNI customization (Flannel default, but adaptable)
 
-Provides:
+### 4. Validation and Health Checks
 
-- parallel compile jobs across all nodes
-- minimal SD card wear
-- maximum RAM performance
-- reproducible builds
+- Playbooks to verify kernel configuration
+- Playbooks to verify builder nodes
+- Sanity checks for cluster readiness and node health
 
-# -----------------------------------------------------------------------------
-# 4. Why Only Builder Does Final Packaging?
-# -----------------------------------------------------------------------------
+### 5. Optional: distcc Builder Integration
 
-- packaging is I/O heavy
-- packaging is single-threaded
-- packaging does not benefit from distcc
-- deterministic output requires a single machine
+While not the core of the project, the repo includes automation for:
 
-Workers still perform the heavy lifting (cc1 execution).
+- Setting up distcc builder nodes
+- Coordinating distributed compilation across the cluster
+- Validating builder availability and toolchain correctness
 
-# -----------------------------------------------------------------------------
-# 5. Why Self-Documenting File Headers?
-# -----------------------------------------------------------------------------
+This is an optional enhancement, not the primary purpose of the repository.
 
-Every file begins with:
+---
 
-    # =============================================================================
-    # File: /opt/ansible-k3s-cluster/<path>/<filename>
-    # =============================================================================
+## Why This Repository Exists
 
-Ensures:
+The Turing‑PI v1.1 is a fantastic piece of hardware, but building a stable, reproducible cluster on CM3+ modules requires a lot of manual steps. This project solves that by providing:
 
-- files are readable out of context
-- future maintainers can instantly locate files
-- repo is self-navigating
+- Infrastructure-as-code for the entire cluster lifecycle
+- Repeatable builds for OS images and cluster configuration
+- Automated verification to ensure correctness
+- A foundation for k3s workloads, CI/CD, distributed builds, or homelab experimentation
 
-# -----------------------------------------------------------------------------
-# 6. Why Verification and Smoketest Playbooks?
-# -----------------------------------------------------------------------------
+---
 
-These can be run anytime, even months later.
+## Repository Structure (High-Level)
 
-verify_builder.yml checks:
+Directory / File — Purpose
 
-- builder user
-- distccd disabled
-- tmpfs state
+- `inventory/` — Node definitions, roles, and group variables
+- `roles/` — Modular Ansible roles for OS prep, k3s, distcc, kernel checks, etc.
+- `site.yml` — Full cluster provisioning playbook
+- `verify_kernel.yml` — Kernel validation workflow
+- `verify_builder.yml` — distcc builder validation
+- `README.md` — Overview and usage instructions
 
-verify_kernel.yml checks:
+---
 
-- kernel package existence
-- kernel version on all nodes
-- module presence
+## Getting Started
 
-cluster-distcc-validate.yml checks:
+1. Clone the repository
+2. Adjust the inventory for your node layout
+3. Run the main playbook to provision the entire cluster
+4. Validate with the included verification playbooks
+5. Deploy workloads to your new k3s cluster
 
-- builder tmpfs
-- builder distccd inactive
-- worker distccd active
-- worker override.conf
-- worker symlinks
-- gcc version
-- PATH
-- MTU
-- FQDN
-- distccd listening
-- distcc dry-run
+---
 
-cluster-distcc-smoketest.yml performs:
+## Future Enhancements
 
-- real distributed compile
-- cc1 activity on workers
-- distccd log inspection
-
-# =============================================================================
-# PLAYBOOKS
-# =============================================================================
-
-# --- DISTCC SUBSYSTEM --------------------------------------------------------
-
-distccd-bootstrap.yml  
-    Worker-only. Installs distccd, symlinks, override, directories.
-
-builder-distccd-guard.yml  
-    Builder-only. Ensures distccd disabled, tmpfs mounted, environment enforced.
-
-worker-distccd-reset.yml  
-    Worker-only. Stops k3s-agent, kills stale cc1, installs override, starts distccd.
-
-cluster-distcc-validate.yml  
-    Read-only validation of distcc subsystem.
-
-cluster-distcc-smoketest.yml  
-    Real distributed compile test.
-
-distcc-mode-switch.yml  
-    Switches cluster into DISTCC BUILD MODE.
-
-cluster-mode-restore.yml  
-    Returns cluster to K3S MODE.
-
-# --- K3S SUBSYSTEM -----------------------------------------------------------
-
-k3s-bootstrap.yml  
-k3s-reset.yml  
-k3s-validate.yml  
-
-# =============================================================================
-# WORKFLOWS
-# =============================================================================
-
-# 1. Bootstrap workers for distcc
-    ansible-playbook playbooks/distccd-bootstrap.yml
-
-# 2. Enter DISTCC BUILD MODE
-    ansible-playbook playbooks/distcc-mode-switch.yml
-
-# 3. Validate distcc
-    ansible-playbook playbooks/cluster-distcc-validate.yml
-
-# 4. Smoketest distcc
-    ansible-playbook playbooks/cluster-distcc-smoketest.yml
-
-# 5. Build kernel
-    make -j14   (on builder)
-
-# 6. Return to K3S MODE
-    ansible-playbook playbooks/cluster-mode-restore.yml
-
-# =============================================================================
-# SUMMARY
-# =============================================================================
-
-This repository is the operating system for your cluster's automation:
-
-- fully documented
-- fully reproducible
-- fully mode-aware
-- fully distributed
-- fully validated
-- fully future-proof
-
-Built for future maintainers, including future you.
-
-# =============================================================================
-# END OF FILE
-# =============================================================================
+- Optional Cilium or Kube‑Router CNI
+- Automated Helm bootstrap (ArgoCD, monitoring, dashboards)
+- Improved builder orchestration
+- Prebuilt CM3+ images for faster provisioning
