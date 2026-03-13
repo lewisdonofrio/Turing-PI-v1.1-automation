@@ -1,3 +1,51 @@
+# =============================================================================
+# File: gitops/apps/dashboard/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe configuration for the Kubernetes Dashboard.
+#   This baseline disables metrics-scraper HA, sets deterministic resource
+#   limits, disables ingress by default, and ensures predictable behavior
+#   on CM3+ nodes.
+# =============================================================================
+
+fullnameOverride: "kubernetes-dashboard"
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
 service:
-  type: NodePort
-  nodePort: 30444
+  type: ClusterIP
+  port: 443
+
+ingress:
+  enabled: false
+
+protocolHttp: false
+
+metricsScraper:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+  name: "kubernetes-dashboard"
+
+# =============================================================================
+# End of File
+# =============================================================================

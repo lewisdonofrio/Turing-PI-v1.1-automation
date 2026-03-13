@@ -193,6 +193,9 @@ jumper_off() {
     --delete-emptydir-data \
     --force
 
+  echo "[*] Uncordoning master after drain"
+  kubectl uncordon "$MASTER" || true
+
   clean_worker_mode_artifacts
 
   echo "[*] Disabling kube-proxy in k3s config now that jumper is OFF"

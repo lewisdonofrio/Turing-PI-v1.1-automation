@@ -9,21 +9,47 @@ kind: Application
 metadata:
   name: loki
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
-    targetRevision: main
-    path: gitops/apps/loki/chart
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 6.6.2
+    helm:
+      releaseName: loki
+      valueFiles:
+        - values.yaml
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: monitoring
+    namespace: loki
 
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # Loki mutates its own configmap checksums and internal labels
+    - group: ""
+      kind: ConfigMap
+      name: loki
+      namespace: loki
+      jsonPointers:
+        - /data

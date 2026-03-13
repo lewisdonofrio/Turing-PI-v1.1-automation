@@ -1,1 +1,55 @@
-installCRDs: false
+# =============================================================================
+# File: gitops/apps/cert-manager/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe cert-manager configuration for GitOps bootstrap.
+#   This baseline disables webhook CA injection (heavy), avoids HA components,
+#   sets deterministic resource limits, and ensures predictable behavior on CM3+.
+# =============================================================================
+
+global:
+  leaderElection:
+    namespace: cert-manager
+
+installCRDs: true
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+webhook:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+cainjector:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+prometheus:
+  enabled: false
+
+ingressShim:
+  defaultIssuerName: "selfsigned"
+  defaultIssuerKind: "ClusterIssuer"
+
+# =============================================================================
+# End of File
+# =============================================================================

@@ -1,4 +1,133 @@
+# =============================================================================
+# File: gitops/apps/monitoring/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe configuration for the kube-prometheus-stack.
+#   This baseline disables heavy components (alertmanager HA, thanos, grafana
+#   persistence), sets deterministic resource limits, and ensures predictable
+#   behavior on CM3+ nodes with limited memory.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Global settings
+# -----------------------------------------------------------------------------
+global:
+  rbac:
+    create: true
+
+# -----------------------------------------------------------------------------
+# Prometheus Operator
+# -----------------------------------------------------------------------------
+prometheusOperator:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+  admissionWebhooks:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Prometheus Instance
+# -----------------------------------------------------------------------------
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    enableAdminAPI: false
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 300m
+        memory: 512Mi
+
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+    storageSpec:
+      emptyDir: {}
+
+# -----------------------------------------------------------------------------
+# Alertmanager
+# -----------------------------------------------------------------------------
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    replicas: 1
+    retention: 120h
+
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+    storage:
+      emptyDir: {}
+
+# -----------------------------------------------------------------------------
+# Grafana
+# -----------------------------------------------------------------------------
 grafana:
+  enabled: true
+
+  adminPassword: "admin"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
   service:
-    type: NodePort
-    nodePort: 30300
+    type: ClusterIP
+    port: 3000
+
+  persistence:
+    enabled: false
+
+  ingress:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Node Exporter
+# -----------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# -----------------------------------------------------------------------------
+# Kube State Metrics
+# -----------------------------------------------------------------------------
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# -----------------------------------------------------------------------------
+# End of File
+# =============================================================================

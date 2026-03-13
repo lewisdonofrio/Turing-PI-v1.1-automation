@@ -10,13 +10,20 @@ kind: Application
 metadata:
   name: cert-manager
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
-    targetRevision: main
-    path: gitops/apps/cert-manager/chart
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.14.4
+    helm:
+      releaseName: cert-manager
+      valueFiles:
+        - values.yaml
 
   destination:
     server: https://kubernetes.default.svc
@@ -26,5 +33,26 @@ spec:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # cert-manager mutates its own webhook CA bundles
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle

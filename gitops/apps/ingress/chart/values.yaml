@@ -1,6 +1,55 @@
+# =============================================================================
+# File: gitops/apps/ingress/chart/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe configuration for ingress-nginx.
+#   This baseline disables admission webhooks (heavy), avoids HA replicas,
+#   sets deterministic resource limits, and ensures predictable behavior
+#   on CM3+ nodes.
+# =============================================================================
+
 controller:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
   service:
-    type: NodePort
-    nodePorts:
-      http: 30080
-      https: 30443
+    type: LoadBalancer
+    externalTrafficPolicy: Local
+
+  admissionWebhooks:
+    enabled: false
+
+  metrics:
+    enabled: false
+
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true
+
+  config:
+    use-forwarded-headers: "true"
+    enable-brotli: "false"
+    enable-modsecurity: "false"
+    enable-owasp-modsecurity-crs: "false"
+
+defaultBackend:
+  enabled: true
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# =============================================================================
+# End of File
+# =============================================================================

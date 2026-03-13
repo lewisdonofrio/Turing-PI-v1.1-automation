@@ -1,6 +1,70 @@
+# =============================================================================
+# File: gitops/apps/loki/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe configuration for Loki (single binary mode).
+#   This baseline avoids microservices mode, disables HA components,
+#   sets deterministic resource limits, and ensures predictable behavior
+#   on CM3+ nodes with limited memory.
+# =============================================================================
+
 loki:
-  persistence:
+  enabled: true
+
+  # Single binary mode is required for CM3+ memory constraints.
+  # Microservices mode is too heavy for ARMv7.
+  singleBinary:
+    replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Disable compactor HA and heavy retention features.
+  compactor:
+    enabled: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 50m
+        memory: 64Mi
+
+  # Disable ruler unless explicitly needed.
+  ruler:
     enabled: false
 
-promtail:
-  enabled: true
+  # Disable ingester HA.
+  ingester:
+    replicas: 1
+
+  # Disable querier HA.
+  querier:
+    replicas: 1
+
+  # Disable query-frontend HA.
+  queryFrontend:
+    replicas: 1
+
+  # Storage configuration (filesystem for CM3+)
+  storage:
+    type: filesystem
+    filesystem:
+      chunks_directory: /var/loki/chunks
+      rules_directory: /var/loki/rules
+
+  # Retention tuned for small disks.
+  limits_config:
+    retention_period: 168h  # 7 days
+
+# Disable Prometheus ServiceMonitor unless monitoring stack is installed.
+serviceMonitor:
+  enabled: false
+
+# =============================================================================
+# End of File
+# =============================================================================

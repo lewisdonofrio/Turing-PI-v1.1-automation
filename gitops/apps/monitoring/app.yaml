@@ -9,13 +9,20 @@ kind: Application
 metadata:
   name: monitoring
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
-    targetRevision: main
-    path: gitops/apps/monitoring/chart
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 58.3.2
+    helm:
+      releaseName: monitoring
+      valueFiles:
+        - values.yaml
 
   destination:
     server: https://kubernetes.default.svc
@@ -25,5 +32,29 @@ spec:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # Prometheus Operator mutates CRDs and webhook CA bundles
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+
+    # Prometheus Operator rewrites parts of its own CRDs
+    - group: monitoring.coreos.com
+      kind: Prometheus
+      jsonPointers:
+        - /spec/replicas
+        - /spec/shards

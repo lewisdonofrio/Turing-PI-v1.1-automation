@@ -9,13 +9,20 @@ kind: Application
 metadata:
   name: kubernetes-dashboard
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
-    targetRevision: main
-    path: gitops/apps/dashboard/chart
+    repoURL: https://kubernetes.github.io/dashboard/
+    chart: kubernetes-dashboard
+    targetRevision: 7.5.0
+    helm:
+      releaseName: kubernetes-dashboard
+      valueFiles:
+        - values.yaml
 
   destination:
     server: https://kubernetes.default.svc
@@ -25,5 +32,24 @@ spec:
     automated:
       prune: true
       selfHeal: true
+
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # Dashboard mutates its own service account token secret
+    - group: ""
+      kind: Secret
+      name: kubernetes-dashboard-token
+      namespace: kubernetes-dashboard
+      jsonPointers:
+        - /data

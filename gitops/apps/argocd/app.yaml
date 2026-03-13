@@ -10,13 +10,20 @@ kind: Application
 metadata:
   name: argocd
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+
 spec:
   project: default
 
   source:
-    repoURL: https://github.com/REPLACE_ME/k3s-platform.git
-    targetRevision: main
-    path: gitops/apps/argocd/chart
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    targetRevision: 6.7.12
+    helm:
+      releaseName: argocd
+      valueFiles:
+        - values.yaml
 
   destination:
     server: https://kubernetes.default.svc
@@ -28,3 +35,22 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle

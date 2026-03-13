@@ -1,2 +1,85 @@
+# =============================================================================
+# File: gitops/apps/argocd/values.yaml
+# Purpose:
+#   Full explicit, ARMv7‑safe Argo CD configuration for GitOps bootstrap.
+#   This baseline avoids HA components, disables Dex, sets deterministic
+#   resource limits, and ensures predictable behavior on CM3+ nodes.
+# =============================================================================
+
+global:
+  image:
+    tag: v2.10.0
+
+configs:
+  cm:
+    admin.enabled: "true"
+
+  params:
+    server.insecure: "true"
+    server.disable.auth: "false"
+
 server:
-  insecure: true
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+applicationSet:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+dex:
+  enabled: false
+
+redis:
+  enabled: true
+  usePassword: false
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# =============================================================================
+# End of File
+# =============================================================================
